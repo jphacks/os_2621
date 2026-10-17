@@ -74,6 +74,95 @@ export const COPY = {
     back: "AI相談に戻る",
     top: "トップへ戻る",
   },
+  summary: {
+    title: "話の内容を整理しました",
+    lead: "相手に見えるのは、下の文だけです。自由に書き換えられます。",
+    visibleNote: "相手にはこの文だけが表示されます。",
+    loading: "話を整理しています…",
+    textLabel: "相手に見せる文",
+    categoryLabel: "テーマ",
+    tagsLabel: "キーワード（読点・カンマ区切り）",
+    share: "この内容で共有する",
+    decline: "共有しない",
+    shareHint: "共有すると、似た悩みの人の候補を見られます。共有した内容は24時間で見えなくなります。",
+    blocked: "今回は、人とつながる手順には進めません。よければ、もう少しAIと話したり、相談窓口を見てみてください。",
+    failed: "整理がうまくいきませんでした。もう一度ためしますか？",
+    retry: "もう一度ためす",
+    noMessages: "まだ話がありません。先にAIと少し話してみましょう。",
+    saveFailed: "共有できませんでした。時間をおいて、もう一度ためしてください。",
+  },
+  categories: {
+    relationships: "人間関係",
+    career: "進路・仕事",
+    study: "勉強",
+    family: "家族",
+    loneliness: "孤独感",
+    health: "からだ・心の調子",
+    other: "その他",
+  },
+
+  candidates: {
+    title: "似た経験をしている人",
+    lead: "あなたが共有した内容と近い人です。つながるかどうかは、あなたが決められます。",
+    loading: "探しています…",
+    empty:
+      "今は近い人が見つかりませんでした。リクエストを残しておくと、似た人が来たときに見つけてもらえます。",
+    request: "つながりをお願いする",
+    sent: "お願いしました",
+    limit: "同時にお願いできるのは3人までです。",
+    commonLabel: "共通点",
+    fallbackCommon: "似たテーマで悩んでいる方です",
+    toRequests: "リクエストの状況を見る",
+    back: "要約に戻る",
+    noSummary: "共有した内容がありません。先に話を整理しましょう。",
+  },
+
+  requests: {
+    title: "つながりリクエスト",
+    lead: "届いたお願いと、あなたが送ったお願いの状況です。断っても理由は伝わりません。",
+    received: "届いたリクエスト",
+    sentTitle: "送ったリクエスト",
+    noneReceived: "まだ届いていません。",
+    noneSent: "まだ送っていません。",
+    accept: "承諾して話す",
+    decline: "見送る",
+    waiting: "返事を待っています",
+    accepted: "承諾されました",
+    declined: "今回は見送られました",
+    expired: "期限が切れました",
+    enter: "ルームに入る",
+    toCandidates: "候補を見る",
+    failed: "うまく処理できませんでした。もう一度ためしてください。",
+  },
+
+  room: {
+    leave: "退出",
+    block: "ブロック",
+    report: "通報",
+    reportTitle: "どんな理由ですか？",
+    reportReasons: [
+      { id: "aggressive", label: "攻撃的だった" },
+      { id: "pii", label: "個人情報を聞かれた" },
+      { id: "uncomfortable", label: "不快な内容だった" },
+      { id: "other", label: "その他" },
+    ],
+    remaining: "残り",
+    placeholder: "ここでは、ニックネームのまま、無理のない範囲でどうぞ",
+    send: "送る",
+    masked: "個人が特定できる情報は伏せました。",
+    ai: "司会（AI）",
+    partnerLeft: "相手が退出しました。",
+    ended: "ルームは終了しました。",
+    endedSafety: "ルームが終了しました。",
+    endedReport: "通報を受け付けて、ルームを終了しました。",
+    reviewTitle: "おつかれさまでした。今の気分はどうですか？",
+    reviewLead: "答えは、あなたの記録のためだけに使います。",
+    reviewSubmit: "記録して、AIと話す",
+    reviewSkip: "候補に戻る",
+    loadFailed: "ルームを開けませんでした。",
+    demoNote: "（画面確認用のデモ表示です。実際の通信は行っていません）",
+    sendFailed: "送れませんでした。もう一度ためしてください。",
+  },
 } as const;
 
 export const AVATARS = [
@@ -86,6 +175,8 @@ export const AVATARS = [
   { id: "bird", emoji: "🐦", label: "ことり" },
   { id: "flower", emoji: "🌼", label: "はな" },
 ] as const;
+
+export type CategoryId = keyof typeof COPY.categories;
 
 export function avatarEmoji(id: string | null | undefined): string {
   return AVATARS.find((a) => a.id === id)?.emoji ?? "🙂";
