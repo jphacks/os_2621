@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
-import { FACILITATOR_CONFIG } from "@/lib/facilitator/config";
 import {
+  DEDUPE_WINDOW_MS,
   composeFacilitatorText,
   endRoom,
   getAdmin,
@@ -38,7 +38,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     // 時刻はサーバー側でも確認する（クライアントの時計に頼らない）
     if (event === "time_warning") {
       if (now - startedAt < ((endsAt - startedAt) * 5) / 6) return NextResponse.json({ ok: true, skipped: "early" });
-      if ((await msSinceLastAi(admin, roomId)) < FACILITATOR_CONFIG.dedupeWindowMs) {
+      if ((await msSinceLastAi(admin, roomId)) < DEDUPE_WINDOW_MS) {
         return NextResponse.json({ ok: true, skipped: "duplicate" });
       }
       const text = await composeFacilitatorText(admin, roomId, "time_warning");

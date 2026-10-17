@@ -2,7 +2,7 @@ import { after, NextResponse } from "next/server";
 import { z } from "zod";
 import { afterMessage } from "@/lib/facilitator/analyze";
 import { detectCrisisL1 } from "@/lib/safety/detectCrisis";
-import { maskPii } from "@/lib/safety/piiMask";
+import { maskPII } from "@/lib/safety/piiMask";
 import { endRoom, getAdmin, getUserId, insertMessage, jsonError, loadRoomAsMember, markLeft } from "@/lib/rooms/service";
 import type { MessageResponse } from "@/types/room";
 
@@ -39,7 +39,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return NextResponse.json<MessageResponse>({ type: "crisis" });
     }
 
-    const { text, masked } = maskPii(original);
+    const { text, masked } = maskPII(original);
     const messageId = await insertMessage(admin, roomId, {
       sender_id: userId,
       sender_type: "user",
@@ -47,7 +47,7 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       masked,
     });
 
-    after(() => afterMessage(admin, roomId, messageId, userId));
+    after(() => afterMessage(admin, roomId, messageId, userId, { piiMasked: masked }));
 
     return NextResponse.json<MessageResponse>({ type: "ok", masked });
   } catch {

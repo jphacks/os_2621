@@ -1,28 +1,82 @@
-// 個人情報のマスク（電話番号・メール・URL・@ハンドル・SNSのID交換）。純粋関数。
-// 要約（P4）とルームのメッセージの両方に使う（SPEC §5.7）。
+/**
+ * 個人情報・外部連絡先マスク処理（純粋関数）
+ *
+ * SPEC.md §5.7 に準拠し、要約（§5.4）およびチャットルームのメッセージ（§5.6）から
+ * 以下の個人情報・外部誘導表現を検出して「***」に置換します:
+ * 1. Web URL（http/https、www.、短縮URL・SNSプロフィールURL）
+ * 2. メールアドレス（半角・全角対応）
+ * 3. 電話番号（固定・携帯・フリーダイヤル・IP電話・国際番号 +81、ハイフン有無、半角・全角対応）
+ * 4. SNS（「LINE」「インスタ」「X」「Twitter」「カカオ」「Discord」等）のID提示・交換を促す表現
+ * 5. @ハンドル（SNSアカウント名、半角＠・全角＠対応）
+ */
 
-const MASK = "***";
+export interface PiiMaskResult {
+  text: string;
+  masked: boolean;
+}
 
-const SNS_NAMES = "LINE|ＬＩＮＥ|ライン|インスタ|instagram|insta|twitter|ツイッター|ツイッターアカ|discord|ディスコード|tiktok|ティックトック|カカオ|kakao|telegram";
+const MASK_TOKEN = "***";
 
-const PATTERNS: RegExp[] = [
-  // メールアドレス
-  /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g,
-  // URL
-  /(?:https?:\/\/|www\.)[^\s　]+/gi,
-  // 電話番号（ハイフン・空白あり/なし、国際表記）
-  /(?:\+81[-\s]?)?0\d{1,4}[-\s]?\d{1,4}[-\s]?\d{3,4}/g,
-  /\b\d{10,11}\b/g,
-  // SNS名 + ID/アカウント + 実際のID文字列
-  new RegExp(String.raw`(?:${SNS_NAMES})\s*(?:の)?\s*(?:ID|id|ＩＤ|アカウント|アカ)?\s*(?:は|：|:|＝|=)?\s*@?[A-Za-z0-9._-]{3,}`, "gi"),
-  // X は誤爆しやすいので「Xのid / Xアカウント」のように明示されたときだけ
-  /(?:X|Ｘ)\s*(?:の)?\s*(?:ID|id|アカウント|アカ)\s*(?:は|：|:|＝|=)?\s*@?[A-Za-z0-9._-]{3,}/g,
-  // @ハンドル
-  /(?<![A-Za-z0-9._])@[A-Za-z0-9._]{3,}/g,
+/**
+ * マスク対象の正規表現リスト（優先度順に適用）
+ * メールアドレスやURL内の「@」や数字列が誤って部分マスクされないよう、
+ * URL → メールアドレス → 電話番号 → SNS ID/交換表現 → @ハンドル の順で置換します。
+ */
+const PII_PATTERNS: readonly RegExp[] = [
+  // 1. Web URL (http://, https://, ｈｔｔｐｓ：//, www.)
+  /(?:https?|ｈｔｔｐｓ?)\s*[:：]\s*[/／]{2}[^\s　、。「」『』（）()【】\[\]<>＜＞"'”’]+/gi,
+  /\bwww\.[a-zA-Z0-9\-._~:/?#\[\]@!$&'()*+,;=]+/gi,
+
+  // 2. 短縮URL・主要SNSドメインのURL（スキーム省略形）
+  /\b(?:bit\.ly|t\.co|tinyurl\.com|goo\.gl|x\.gd|lin\.ee|line\.me|instagr\.am|instagram\.com|twitter\.com|x\.com)\/[a-zA-Z0-9_\-./?=&%+]+/gi,
+
+  // 3. メールアドレス（半角・全角英数記号対応）
+  /[a-zA-Z0-9ａ-ｚＡ-Ｚ０-９._%+-]+[@＠][a-zA-Z0-9ａ-ｚＡ-Ｚ０-９.-]+[.．][a-zA-Zａ-ｚＡ-Ｚ]{2,}/g,
+
+  // 4. 電話番号
+  // 4-a. 国際電話番号表記 (+81 / ＋８１)
+  /[+＋][8８][1１][\s　\-ー−‐―–—ｰ()（）]*[0０]?[1-9１-９][0-9０-９]{0,3}[\s　\-ー−‐―–—ｰ()（）]*[0-9０-９]{1,4}[\s　\-ー−‐―–—ｰ()（）]*[0-9０-９]{3,4}/g,
+  // 4-b. ハイフン・スペース・括弧区切りの国内電話番号（携帯・固定・0120・050等）
+  /(?<![0-9０-９])[0０][0-9０-９]{1,4}[\s　\-ー−‐―–—ｰ()（）]+[0-9０-９]{1,4}[\s　\-ー−‐―–—ｰ()（）]+[0-9０-９]{3,4}(?![0-9０-９])/g,
+  // 4-c. ハイフンなしの国内電話番号（携帯11桁: 070/080/090/050、フリーダイヤル: 0120/0800、固定10桁: 0X...）
+  /(?<![0-9０-９])(?:[0０][5789５７８９][0０][0-9０-９]{8}|[0０][1１][2２][0０][0-9０-９]{6}|[0０][8８][0０][0０][0-9０-９]{7}|[0０][1-9１-９][0-9０-９]{8})(?![0-9０-９])/g,
+
+  // 5. SNS（「LINE」「インスタ」「X」「Twitter」「カカオ」「Discord」等）のID交換・提示表現
+  // 5-a. SNS名 + ID/アカウント等の明示的なID値の提示（例: 「LINE ID: abc_123」「インスタは hana_01」「カカオ：test99」）
+  /(?:LINE|ＬＩＮＥ|ライン|らいん|Instagram|インスタグラム|インスタ|いんすた|Twitter|ツイッター|ついったー|カカオトーク|カカオ|かかお|KakaoTalk|Kakao|Discord|ディスコード|でぃすこ|[XＸ](?=\s*(?:の|ID|ＩＤ|id|アカウント|垢|[:：])))[\s　]*(?:の)?[\s　]*(?:ID|ＩＤ|id|アカウント|垢)?[\s　]*(?:は|が|[:：=＝])[\s　]*[@＠]?[a-zA-Z0-9ａ-ｚＡ-Ｚ０-９._\-]{3,32}/gi,
+  // 5-b. SNS名 + 空白区切りでのID直接記載（例: 「LINEID abc123」「インスタID: xxx」「カカオID test_1」）
+  /(?:LINE|ＬＩＮＥ|ライン|らいん|Instagram|インスタグラム|インスタ|いんすた|Twitter|ツイッター|ついったー|カカオトーク|カカオ|かかお|Kakao|Discord|ディスコード|[XＸ])[\s　]*(?:の)?[\s　]*(?:ID|ＩＤ|id|アカウント|垢)[\s　:：=＝]+[@＠]?[a-zA-Z0-9ａ-ｚＡ-Ｚ０-９._\-]{3,32}/gi,
+  // 5-c. 単独の「ID: xxx」「IDはxxx」表記
+  /\b(?:ID|ＩＤ|id)[\s　]*(?:は|が|[:：=＝])[\s　]*[@＠]?[a-zA-Z0-9ａ-ｚＡ-Ｚ０-９._\-]{3,32}/g,
+  // 5-d. SNSのID交換・外部誘導を促すフレーズ（例: 「LINE交換しよう」「インスタ教えて」「カカオで話そう」「Xで繋がろう」）
+  /(?:LINE|ＬＩＮＥ|ライン|らいん|Instagram|インスタグラム|インスタ|いんすた|Twitter|ツイッター|ついったー|カカオトーク|カカオ|かかお|Kakao|Discord|ディスコード|連絡先|(?:SNS|ＳＮＳ|[XＸ])(?:の)?(?:アカウント|垢|ID|ＩＤ)|[XＸ](?=で(?:繋が|つなが|連絡|話|DM)))[\s　]*(?:の)?[\s　]*(?:ID|ＩＤ|id|アカウント|垢|連絡先|QR|コード)?[\s　]*(?:を|も|と|で)?[\s　]*(?:交換|おしえて|教えて|おしえます|教えます|追加|ついか|登録|とうろく|繋が|つなが|移行|いこう|話そ|はなそ|連絡|れんらく|送って|おくって|晒し|さらし|貼っ|はっ|DM|ＤＭ)[a-zA-Z0-9ぁ-んァ-ヶー一-龠々？?！!。、]*/gi,
+
+  // 6. @ハンドル（SNSアカウント: @username / ＠username）
+  /(?<![a-zA-Z0-9ａ-ｚＡ-Ｚ０-９._%+-])[@＠][a-zA-Z0-9ａ-ｚＡ-Ｚ０-９_][a-zA-Z0-9ａ-ｚＡ-Ｚ０-９_.]{1,30}/g,
 ];
 
-export function maskPii(input: string): { text: string; masked: boolean } {
-  let text = input;
-  for (const pattern of PATTERNS) text = text.replace(pattern, MASK);
-  return { text, masked: text !== input };
+/**
+ * テキスト内の個人情報・外部連絡先を「***」にマスクする純粋関数
+ */
+export function maskPII(text: string): PiiMaskResult {
+  if (!text) {
+    return { text: "", masked: false };
+  }
+
+  let current = text;
+  let masked = false;
+
+  for (const pattern of PII_PATTERNS) {
+    const regex = new RegExp(pattern.source, pattern.flags);
+    if (regex.test(current)) {
+      masked = true;
+      const replaceRegex = new RegExp(pattern.source, pattern.flags);
+      current = current.replace(replaceRegex, MASK_TOKEN);
+    }
+  }
+
+  return {
+    text: current,
+    masked,
+  };
 }

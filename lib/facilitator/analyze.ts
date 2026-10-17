@@ -2,15 +2,16 @@ import "server-only";
 import { z } from "zod";
 import { generateJson } from "@/lib/llm/claude";
 import { loadPrompt } from "@/lib/llm/prompts";
+import { getFacilitatorConfig } from "@/lib/facilitator/config";
+import { decideIntervention, shouldAnalyzeFlow, type FlowAnalysisResult } from "@/lib/facilitator/decide";
 import { detectCrisisL1 } from "@/lib/safety/detectCrisis";
-import { FACILITATOR_CONFIG } from "@/lib/facilitator/config";
 import {
   composeFacilitatorText,
   endRoom,
   insertMessage,
   msSinceLastAi,
   type Admin,
-  type FacilitatorTrigger,
+  type RoomRow,
 } from "@/lib/rooms/service";
 
 const riskSchema = z.object({
@@ -26,11 +27,20 @@ const flowSchema = z.object({
   pii_attempt: z.boolean(),
 });
 
+const DEMO_FAST = process.env.NEXT_PUBLIC_DEMO_FAST_TIMER === "true";
+
 /**
- * メッセージ配信後に非同期で行う処理（L2の危機判定 → 流れの分析 → 必要なら司会が発言）。
- * 失敗しても、ルームの進行は止めない（ログにはIDだけ出す。本文は出さない）。
+ * メッセージ配信後に非同期で行う処理（L2の危機判定 → 流れの分析 → 介入の判定 → 司会の発言）。
+ * 判定のルールは lib/facilitator/decide.ts（Bさん）に任せる。
+ * 失敗してもルームの進行は止めない（ログにはIDだけ出す。本文は出さない）。
  */
-export async function afterMessage(admin: Admin, roomId: string, messageId: string, userId: string) {
+export async function afterMessage(
+  admin: Admin,
+  roomId: string,
+  messageId: string,
+  userId: string,
+  opts: { piiMasked: boolean }
+) {
   try {
     const { data: recent } = await admin
       .from("room_messages")
@@ -44,7 +54,7 @@ export async function afterMessage(admin: Admin, roomId: string, messageId: stri
       .join("\n");
     const latest = ordered.find((m) => m.id === messageId);
 
-    // L2: 危機判定
+    // L2: 危機判定。crisis なら、配信済みの発言を取り消し、相手には理由を伏せてルームを終える
     if (latest) {
       const risk = await generateJson({
         systemPrompt: await loadPrompt("risk"),
@@ -55,7 +65,6 @@ export async function afterMessage(admin: Admin, roomId: string, messageId: stri
       }).catch(() => null);
 
       if (risk?.level === "crisis") {
-        // 配信済みの発言を取り消し、相手には理由を伏せてルームを終える
         await admin.from("room_messages").delete().eq("id", messageId);
         await endRoom(admin, roomId, "safety", "ルームが終了しました");
         console.warn("[room] L2 crisis", { roomId, userId });
@@ -63,39 +72,55 @@ export async function afterMessage(admin: Admin, roomId: string, messageId: stri
       }
     }
 
-    // 流れの分析（3件ごと）と、司会の介入（最短間隔あり）
+    const cfg = getFacilitatorConfig(DEMO_FAST);
+
+    // 流れの分析は N 件ごと（個人情報のマスクがあったときは、すぐ判定に回す）
     const { count } = await admin
       .from("room_messages")
       .select("id", { count: "exact", head: true })
       .eq("room_id", roomId)
       .eq("sender_type", "user");
-    if (!count || count % FACILITATOR_CONFIG.analyzeEveryMessages !== 0) return;
-    if ((await msSinceLastAi(admin, roomId)) < FACILITATOR_CONFIG.minInterventionIntervalMs) return;
+    let flow: FlowAnalysisResult | undefined;
+    if (shouldAnalyzeFlow(count ?? 0, cfg.ANALYZE_EVERY_N)) {
+      flow =
+        (await generateJson({
+          systemPrompt: await loadPrompt("flow_analysis"),
+          messages: [{ role: "user", content: transcript }],
+          modelTier: "fast",
+          timeoutMs: 5000,
+          schema: flowSchema,
+        }).catch(() => null)) ?? undefined;
+    }
+    if (!flow && !opts.piiMasked) return;
 
-    const flow = await generateJson({
-      systemPrompt: await loadPrompt("flow_analysis"),
-      messages: [{ role: "user", content: transcript }],
-      modelTier: "fast",
-      timeoutMs: 5000,
-      schema: flowSchema,
-    }).catch(() => null);
-    if (!flow) return;
+    const { data: roomData } = await admin.from("rooms").select("*").eq("id", roomId).single();
+    const room = roomData as RoomRow | null;
+    if (!room || room.status !== "active") return;
 
-    const trigger: FacilitatorTrigger | null = flow.hostility
-      ? "hostility"
-      : flow.pii_attempt
-        ? "pii_attempt"
-        : flow.rumination
-          ? "rumination"
-          : flow.negative_streak
-            ? "negative_streak"
-            : null;
-    if (!trigger) return;
+    const sinceAi = await msSinceLastAi(admin, roomId);
+    const action = decideIntervention({
+      elapsedMs: Date.now() - new Date(room.started_at).getTime(),
+      timeWarningAlreadySent: true, // 25分の予告は /facilitate が担当する
+      msSinceLastIntervention: Number.isFinite(sinceAi) ? sinceAi : null,
+      flowAnalysis: flow,
+      piiMasked: opts.piiMasked,
+      previousHostilityCount: room.hostility_count ?? 0,
+      config: cfg,
+    });
 
-    const text = await composeFacilitatorText(admin, roomId, trigger);
+    if (flow) {
+      // 列が無いDBでは失敗するが、ルームの進行には影響させない
+      await admin.from("rooms").update({ hostility_count: action.nextHostilityCount }).eq("id", roomId);
+    }
+    if (!action.shouldIntervene || !action.trigger) return;
+
+    const text = await composeFacilitatorText(admin, roomId, action.trigger);
     // 司会の発言も、危機を表す語を含んでいないか念のため確認する
     if (text && detectCrisisL1(text).level !== "crisis") {
       await insertMessage(admin, roomId, { sender_id: null, sender_type: "ai", body: text });
+    }
+    if (action.closeRoom) {
+      await endRoom(admin, roomId, action.endReason ?? "safety", null);
     }
   } catch {
     console.warn("[room] afterMessage failed", { roomId });

@@ -5,6 +5,7 @@ import { createClient } from "@/lib/supabase/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { loadPrompt } from "@/lib/llm/prompts";
 import { streamText } from "@/lib/llm/claude";
+import type { FacilitatorTrigger } from "@/lib/facilitator/decide";
 import type { EndReason } from "@/types/room";
 
 export type Admin = SupabaseClient;
@@ -15,6 +16,8 @@ export type RoomRow = {
   end_reason: EndReason | null;
   started_at: string;
   ends_at: string;
+  /** 連続した攻撃的発言の回数。列が無いDBでは undefined（migrationで rooms に hostility_count int default 0 を追加） */
+  hostility_count?: number;
 };
 
 export const FRIENDLY_ERROR = "うまく処理できませんでした。少し時間をおいて、もう一度ためしてください。";
@@ -49,7 +52,7 @@ export async function loadRoomAsMember(admin: Admin, roomId: string, userId: str
   if (!member) return null;
   const { data: room } = await admin
     .from("rooms")
-    .select("id,status,end_reason,started_at,ends_at")
+    .select("*")
     .eq("id", roomId)
     .single();
   return (room as RoomRow | null) ?? null;
@@ -95,15 +98,10 @@ export async function markLeft(admin: Admin, roomId: string, userId: string) {
     .eq("user_id", userId);
 }
 
-export type FacilitatorTrigger =
-  | "opening"
-  | "negative_streak"
-  | "rumination"
-  | "hostility"
-  | "pii_attempt"
-  | "silence"
-  | "time_warning"
-  | "closing";
+export type { FacilitatorTrigger };
+
+/** 同じイベントを2人が送ったときの重複を無視する時間（ミリ秒） */
+export const DEDUPE_WINDOW_MS = 30_000;
 
 const FALLBACK_TEXT: Partial<Record<FacilitatorTrigger, string>> = {
   time_warning: "あと5分です。今日話してよかったことを、よければひとことずつ教えてください。",
