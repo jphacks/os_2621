@@ -13,9 +13,41 @@ export type Category =
 
 export type Stage = "struggling" | "coping" | "recovering";
 
+/**
+ * ピアマッチング対象の年代区分（学生区分）
+ * - junior_high: 中学生
+ * - high_school: 高校生
+ * - university: 大学生（専門・院生含む）
+ * ※社会人は対象外。異なる年代区分同士はマッチングしない。
+ */
+export type AgeGroup = "junior_high" | "high_school" | "university";
+
+export const AGE_GROUPS: readonly AgeGroup[] = [
+  "junior_high",
+  "high_school",
+  "university",
+] as const;
+
+export const AGE_GROUP_LABELS: Record<AgeGroup, string> = {
+  junior_high: "中学生",
+  high_school: "高校生",
+  university: "大学生（専門・院生含む）",
+};
+
+/**
+ * 与えられた値がピアマッチング対象の有効な年代区分かを判定する純粋関数
+ */
+export function isValidAgeGroup(value: unknown): value is AgeGroup {
+  return (
+    typeof value === "string" &&
+    (AGE_GROUPS as readonly string[]).includes(value)
+  );
+}
+
 export interface MatchSummary {
   id: string;
   userId: string;
+  ageGroup?: AgeGroup;
   category: Category;
   tags: string[];
   energy: number; // 1〜5
@@ -123,6 +155,9 @@ export function calculateMatchScore(a: MatchSummary, b: MatchSummary): number {
  * 2. riskLevel !== "crisis"（本人および候補の双方が危機状態ではない）
  * 3. 自分自身ではない・ブロック関係にない・すでにリクエスト中やルーム進行中の相手ではない
  * 4. 【共倒れ防止】両者のエネルギーがどちらも 2 以下の場合は除外（false）
+ * 5. 【同年代マッチング（未成年保護・世代間ギャップ防止）】
+ *    ピアマッチング対象の学生区分（junior_high / high_school / university）であり、
+ *    かつ同じ年代区分同士のみ許可する（異なる年代や対象外区分は除外）。
  */
 export function isEligibleCandidate(
   me: MatchSummary,
@@ -165,6 +200,16 @@ export function isEligibleCandidate(
   // 4. 【共倒れ防止】両者のエネルギーが共に 2 以下の場合は除外
   if (me.energy <= 2 && candidate.energy <= 2) {
     return false;
+  }
+
+  // 5. 【同年代マッチング】ageGroup が指定されている場合は有効な学生区分かつ完全一致を必須とする（fail-closed）
+  if (me.ageGroup !== undefined || candidate.ageGroup !== undefined) {
+    if (!isValidAgeGroup(me.ageGroup) || !isValidAgeGroup(candidate.ageGroup)) {
+      return false;
+    }
+    if (me.ageGroup !== candidate.ageGroup) {
+      return false;
+    }
   }
 
   return true;

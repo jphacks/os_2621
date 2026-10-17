@@ -1,11 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
+  AGE_GROUP_LABELS,
+  AGE_GROUPS,
   calculateJaccard,
   calculateMatchScore,
   calculateStageBonus,
   combineEnergy,
   isEligibleCandidate,
+  isValidAgeGroup,
   rankCandidates,
+  type AgeGroup,
   type MatchSummary,
 } from "../../lib/matching/score";
 
@@ -18,6 +22,7 @@ function createDummySummary(
   return {
     id: "summary-default",
     userId: "user-default",
+    ageGroup: "university",
     category: "relationships",
     tags: ["友人関係", "孤立感"],
     energy: 3,
@@ -239,6 +244,83 @@ describe("isEligibleCandidate (候補フィルタ条件・共倒れ防止)", () 
       })
     ).toBe(false);
   });
+
+  it("【同年代マッチング】中学生・高校生・大学生（専門・院生含む）の同じ年代区分同士のみ true を返す", () => {
+    const groups: AgeGroup[] = ["junior_high", "high_school", "university"];
+
+    for (const myGroup of groups) {
+      for (const candidateGroup of groups) {
+        const mySummary = createDummySummary({
+          id: `me-${myGroup}`,
+          userId: `user-me-${myGroup}`,
+          ageGroup: myGroup,
+          energy: 3,
+        });
+        const candidateSummary = createDummySummary({
+          id: `cand-${candidateGroup}`,
+          userId: `user-cand-${candidateGroup}`,
+          ageGroup: candidateGroup,
+          energy: 3,
+        });
+
+        if (myGroup === candidateGroup) {
+          expect(isEligibleCandidate(mySummary, candidateSummary)).toBe(true);
+        } else {
+          expect(isEligibleCandidate(mySummary, candidateSummary)).toBe(false);
+        }
+      }
+    }
+  });
+
+  it("【fail-closed】対象外の年代区分（社会人・小学生など）や片方のみ ageGroup 未設定の場合は false を返す", () => {
+    const validHighSchool = createDummySummary({
+      id: "sum-hs",
+      userId: "user-hs",
+      ageGroup: "high_school",
+    });
+    const missingAgeGroup = createDummySummary({
+      id: "sum-missing-age",
+      userId: "user-missing",
+      ageGroup: undefined,
+    });
+    const invalidAdult = createDummySummary({
+      id: "sum-adult",
+      userId: "user-adult",
+      ageGroup: "adult" as unknown as AgeGroup,
+    });
+    const invalidElementary = createDummySummary({
+      id: "sum-elementary",
+      userId: "user-elementary",
+      ageGroup: "elementary" as unknown as AgeGroup,
+    });
+
+    expect(isEligibleCandidate(validHighSchool, missingAgeGroup)).toBe(false);
+    expect(isEligibleCandidate(missingAgeGroup, validHighSchool)).toBe(false);
+    expect(isEligibleCandidate(validHighSchool, invalidAdult)).toBe(false);
+    expect(isEligibleCandidate(invalidAdult, invalidAdult)).toBe(false);
+    expect(isEligibleCandidate(validHighSchool, invalidElementary)).toBe(false);
+  });
+});
+
+describe("isValidAgeGroup / AGE_GROUPS (対象年代区分の定義と検証)", () => {
+  it("中学生・高校生・大学生（専門・院生含む）の3区分のみ有効と判定する", () => {
+    expect(AGE_GROUPS).toEqual(["junior_high", "high_school", "university"]);
+    expect(AGE_GROUP_LABELS).toEqual({
+      junior_high: "中学生",
+      high_school: "高校生",
+      university: "大学生（専門・院生含む）",
+    });
+
+    expect(isValidAgeGroup("junior_high")).toBe(true);
+    expect(isValidAgeGroup("high_school")).toBe(true);
+    expect(isValidAgeGroup("university")).toBe(true);
+
+    expect(isValidAgeGroup("elementary")).toBe(false);
+    expect(isValidAgeGroup("adult")).toBe(false);
+    expect(isValidAgeGroup("")).toBe(false);
+    expect(isValidAgeGroup(undefined)).toBe(false);
+    expect(isValidAgeGroup(null)).toBe(false);
+  });
 });
 
 describe("rankCandidates (候補ランキング・スコア0.3未満除外・同カテゴリ優先・最大3件)", () => {
@@ -275,41 +357,45 @@ describe("rankCandidates (候補ランキング・スコア0.3未満除外・同
     expect(ranked).toHaveLength(0);
   });
 
-  it("同カテゴリを優先し、共倒れ候補やブロック候補を除外した上で上位3件のみをスコア降順で返す", () => {
-    // 候補1: 同カテゴリ + 全タグ一致 + recovering => score = 0.5 + 0.3 + 0.2 = 1.0
+  it("同カテゴリを優先し、異世代・共倒れ候補・crisis候補を除外した上で上位3件のみをスコア降順で返す", () => {
+    // 候補1: 同年代 + 同カテゴリ + 全タグ一致 + recovering => score = 0.5 + 0.3 + 0.2 = 1.0
     const cand1 = createDummySummary({
       id: "sum-1",
       userId: "user-1",
+      ageGroup: "university",
       category: "relationships",
       tags: ["友人関係", "孤立感"],
       energy: 4,
       stage: "recovering",
     });
 
-    // 候補2: 同カテゴリ + 片方タグ一致(1/2=0.5) + 同stage(0.6) => score = 0.5 + 0.15 + 0.12 = 0.77
+    // 候補2: 同年代 + 同カテゴリ + 片方タグ一致(1/2=0.5) + 同stage(0.6) => score = 0.5 + 0.15 + 0.12 = 0.77
     const cand2 = createDummySummary({
       id: "sum-2",
       userId: "user-2",
+      ageGroup: "university",
       category: "relationships",
       tags: ["友人関係"],
       energy: 3,
       stage: "struggling",
     });
 
-    // 候補3: 同カテゴリ + タグ一致なし(0) + coping(0.3) => score = 0.5 + 0 + 0.06 = 0.56
+    // 候補3: 同年代 + 同カテゴリ + タグ一致なし(0) + coping(0.3) => score = 0.5 + 0 + 0.06 = 0.56
     const cand3 = createDummySummary({
       id: "sum-3",
       userId: "user-3",
+      ageGroup: "university",
       category: "relationships",
       tags: ["サークル"],
       energy: 3,
       stage: "coping",
     });
 
-    // 候補4: 異カテゴリ + 全タグ一致(1.0) + recovering(1.0) => score = 0 + 0.3 + 0.2 = 0.50
+    // 候補4: 同年代 + 異カテゴリ + 全タグ一致(1.0) + recovering(1.0) => score = 0 + 0.3 + 0.2 = 0.50
     const cand4 = createDummySummary({
       id: "sum-4",
       userId: "user-4",
+      ageGroup: "university",
       category: "loneliness",
       tags: ["友人関係", "孤立感"],
       energy: 4,
@@ -320,6 +406,7 @@ describe("rankCandidates (候補ランキング・スコア0.3未満除外・同
     const candLowEnergy = createDummySummary({
       id: "sum-low-energy",
       userId: "user-low-energy",
+      ageGroup: "university",
       category: "relationships",
       tags: ["友人関係", "孤立感"],
       energy: 2,
@@ -330,6 +417,7 @@ describe("rankCandidates (候補ランキング・スコア0.3未満除外・同
     const candCrisis = createDummySummary({
       id: "sum-crisis",
       userId: "user-crisis",
+      ageGroup: "university",
       category: "relationships",
       tags: ["友人関係", "孤立感"],
       energy: 5,
@@ -337,9 +425,21 @@ describe("rankCandidates (候補ランキング・スコア0.3未満除外・同
       riskLevel: "crisis",
     });
 
+    // 候補7 (異世代除外): スコア1.0相当だが ageGroup が high_school のため除外
+    const candDiffAgeGroup = createDummySummary({
+      id: "sum-diff-age",
+      userId: "user-diff-age",
+      ageGroup: "high_school",
+      category: "relationships",
+      tags: ["友人関係", "孤立感"],
+      energy: 5,
+      stage: "recovering",
+    });
+
     const ranked = rankCandidates(me, [
       cand4,
       candLowEnergy,
+      candDiffAgeGroup,
       cand2,
       candCrisis,
       cand3,
@@ -357,3 +457,4 @@ describe("rankCandidates (候補ランキング・スコア0.3未満除外・同
     expect(ranked[2].score).toBeCloseTo(0.56, 5);
   });
 });
+
