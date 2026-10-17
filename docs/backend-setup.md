@@ -13,6 +13,19 @@
    - `SUPABASE_SERVICE_ROLE_KEY`: 同じ画面の service_role（**サーバー専用。`NEXT_PUBLIC_` を付けない**）
    - `ANTHROPIC_API_KEY` / `ANTHROPIC_MODEL_MAIN` / `ANTHROPIC_MODEL_FAST`
 
+### 無料で試す（Gemini）
+
+Claude の代わりに、無料枠のある Google Gemini を使えます。
+
+1. https://aistudio.google.com/apikey で API キーを作る（クレジットカード不要）。
+2. `.env.local` に `LLM_PROVIDER=gemini` と `GEMINI_API_KEY=（キー）` を書く。`ANTHROPIC_*` は空のままでよい。
+3. モデルを変えたいときだけ `GEMINI_MODEL_MAIN` / `GEMINI_MODEL_FAST` を書く（空なら `gemini-2.5-flash` / `gemini-2.5-flash-lite`）。
+
+注意:
+- 無料枠には、回数と速度の制限がある。デモの直前に使いすぎると、止まることがある。止まったときは、危機判定が失敗扱い（fail-closed）になり、マッチングに進めない。
+- **無料枠に送った内容は、Google が製品の改善に使うことがある。**実在の相談内容は入れず、ダミーの文だけで試すこと。
+- 安全フィルターで応答が空になったときも、失敗として扱う（fail-closed）。
+
 ## 2. 設計のポイント
 
 - **クライアントから書けるのは `profiles`（自分の行）だけ**。ほかの書き込みはすべて API（service role）を通す。
