@@ -34,7 +34,7 @@ Claude の代わりに、無料枠のある Google Gemini を使えます。
 - **クライアントから書けるのは `profiles`（自分の行）だけ**。ほかの書き込みはすべて API（service role）を通す。
 - `room_messages` は、SELECT がルームのメンバーだけ。INSERT/UPDATE/DELETE のポリシーがない（= クライアントから書けない）ので、安全チェックを迂回できない。
 - `blocks` / `reports` / `session_risk` は、ポリシーなし（クライアントから見えない）。`blocks` と `reports` はユーザー削除後も残す。
-- `session_risk`: AI相談で crisis（24時間）・L2の失敗（30分）になったユーザーを覚えておく。`/api/summarize`・`/api/summaries`・`/api/match/*` は、これを見て拒否する（UIの無効化だけに頼らない）。確認に失敗したときも「止める」側に倒す。
+- `session_risk`: AI相談で crisis（24時間）・L2の失敗（5分）になったユーザーを覚えておく。`/api/summarize`・`/api/summaries`・`/api/match/*` は、これを見て拒否する（UIの無効化だけに頼らない）。確認に失敗したときも「止める」側に倒す。
 - ログには ID と判定結果だけを出す。相談やメッセージの本文は出さない。
 
 ## 3. RLS の確認手順（SQL Editor）

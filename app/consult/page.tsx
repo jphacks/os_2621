@@ -138,9 +138,13 @@ export default function ConsultPage() {
         )}
 
         {!crisis && matchingBlocked && (
-          <p role="status" className="rounded-lg border bg-secondary/40 px-4 py-2 text-xs text-muted-foreground">
-            {COPY.consult.matchingBlocked}
-          </p>
+          <div role="status" className="space-y-2 rounded-lg border bg-secondary/40 px-4 py-2 text-xs text-muted-foreground">
+            <p>{COPY.consult.matchingBlocked}</p>
+            {/* 画面の状態だけを新しくする。サーバーの止める記録は、時間がたつと自然に外れる */}
+            <Button variant="outline" size="sm" onClick={restart}>
+              {COPY.consult.newSession}
+            </Button>
+          </div>
         )}
         {error && (
           <p role="alert" className="text-center text-xs text-muted-foreground">
