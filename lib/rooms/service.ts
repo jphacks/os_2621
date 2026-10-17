@@ -1,14 +1,10 @@
 import "server-only";
-import { NextResponse } from "next/server";
-import type { SupabaseClient } from "@supabase/supabase-js";
-import { createClient } from "@/lib/supabase/server";
-import { createAdminClient } from "@/lib/supabase/admin";
 import { loadPrompt } from "@/lib/llm/prompts";
 import { streamText } from "@/lib/llm/claude";
 import type { FacilitatorTrigger } from "@/lib/facilitator/decide";
 import type { EndReason } from "@/types/room";
 
-export type Admin = SupabaseClient;
+export type Admin = ReturnType<typeof getAdmin>;
 
 export type RoomRow = {
   id: string;
@@ -20,26 +16,8 @@ export type RoomRow = {
   hostility_count?: number;
 };
 
-export const FRIENDLY_ERROR = "うまく処理できませんでした。少し時間をおいて、もう一度ためしてください。";
-
-export function jsonError(status: number, message = FRIENDLY_ERROR) {
-  return NextResponse.json({ error: message }, { status });
-}
-
-/** ログイン中のユーザーID（Cookieのセッションから）。未ログインなら null */
-export async function getUserId(): Promise<string | null> {
-  try {
-    const supabase = await createClient();
-    const { data } = await supabase.auth.getUser();
-    return data.user?.id ?? null;
-  } catch {
-    return null;
-  }
-}
-
-export function getAdmin(): Admin {
-  return createAdminClient();
-}
+export { FRIENDLY_ERROR, jsonError, getUserId, getAdmin } from "@/lib/api/common";
+import { getAdmin } from "@/lib/api/common";
 
 /** ルームを取得し、本人がメンバーか確認する。メンバーでなければ null */
 export async function loadRoomAsMember(admin: Admin, roomId: string, userId: string) {
@@ -105,6 +83,8 @@ export const DEDUPE_WINDOW_MS = 30_000;
 
 const FALLBACK_TEXT: Partial<Record<FacilitatorTrigger, string>> = {
   time_warning: "あと5分です。今日話してよかったことを、よければひとことずつ教えてください。",
+  opening:
+    "お二人とも、悩みを共有してくださってありがとうございます。よければ、今日の気分をひとことずつ教えてください。",
   closing:
     "お話ししてくれてありがとうございました。ここでルームを終えます。つらいときは、いつでも相談窓口も頼ってくださいね。",
 };
