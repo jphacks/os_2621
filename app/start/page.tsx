@@ -56,7 +56,10 @@ export default function StartPage() {
       }
       sessionStore.setProfile({ nickname: name, avatar });
       router.push("/checkin");
-    } catch {
+    } catch (e) {
+      // 原因の調査用（エラーの種類とメッセージだけ。ニックネームなどの入力は出さない）
+      const err = e as { name?: string; message?: string; status?: number; code?: string };
+      console.warn("[start] sign-in failed", { name: err?.name, message: err?.message, status: err?.status, code: err?.code });
       setError(COPY.start.errors.signIn);
       setBusy(false);
     }

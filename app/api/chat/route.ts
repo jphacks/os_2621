@@ -67,7 +67,9 @@ export async function POST(req: Request) {
         schema: riskSchema,
       });
       return { level: r.level, categories: [], reason: r.reason ?? "" } as L2RiskResult;
-    } catch {
+    } catch (e) {
+      // 原因の調査用（エラーの種類だけ。会話の本文は出さない）
+      console.warn("[chat] L2 failed", { userId, error: e instanceof Error ? e.message : "unknown" });
       return { level: "unknown" };
     }
   })();
@@ -108,8 +110,9 @@ export async function POST(req: Request) {
           if (crisis) return;
           send({ type: "delta", text });
         }
-      } catch {
+      } catch (e) {
         if (crisis) return;
+        console.warn("[chat] reply failed", { userId, error: e instanceof Error ? e.message : "unknown" });
         // 応答の生成に失敗したら、安全側に倒してマッチングを止める
         await setRiskBlock(admin, userId, "unknown").catch(() => {});
         send({ type: "done", matchingBlocked: true });

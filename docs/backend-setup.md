@@ -19,7 +19,7 @@ Claude の代わりに、無料枠のある Google Gemini を使えます。
 
 1. https://aistudio.google.com/apikey で API キーを作る（クレジットカード不要）。
 2. `.env.local` に `LLM_PROVIDER=gemini` と `GEMINI_API_KEY=（キー）` を書く。`ANTHROPIC_*` は空のままでよい。
-3. モデルを変えたいときだけ `GEMINI_MODEL_MAIN` / `GEMINI_MODEL_FAST` を書く（空なら `gemini-2.5-flash` / `gemini-2.5-flash-lite`）。
+3. モデルを変えたいときだけ `GEMINI_MODEL_MAIN` / `GEMINI_MODEL_FAST` を書く（空なら `gemini-3.8-flash` / `gemini-3.5-flash-lite`）。
 
 注意:
 - 無料枠には、回数と速度の制限がある。デモの直前に使いすぎると、止まることがある。止まったときは、危機判定が失敗扱い（fail-closed）になり、マッチングに進めない。

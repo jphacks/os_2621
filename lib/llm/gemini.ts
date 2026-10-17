@@ -10,18 +10,17 @@ type Msg = { role: "user" | "assistant"; content: string };
 
 export function getGeminiModel(tier: ModelTier): string {
   const fromEnv = tier === "main" ? process.env.GEMINI_MODEL_MAIN : process.env.GEMINI_MODEL_FAST;
-  return fromEnv || (tier === "main" ? "gemini-2.5-flash" : "gemini-2.5-flash-lite");
+  return fromEnv || (tier === "main" ? "gemini-3.8-flash" : "gemini-3.5-flash-lite");
 }
 
-function requestBody(systemPrompt: string, messages: Msg[], maxTokens: number, model: string, json: boolean) {
+function requestBody(systemPrompt: string, messages: Msg[], maxTokens: number, json: boolean) {
   return {
     systemInstruction: { parts: [{ text: systemPrompt }] },
     contents: messages.map((m) => ({ role: m.role === "assistant" ? "model" : "user", parts: [{ text: m.content }] })),
     generationConfig: {
-      maxOutputTokens: maxTokens,
+      // 「考える」トークンも出力枠を使うことがあるので、余裕を持たせる（応答の長さはプロンプトで決まる）
+      maxOutputTokens: Math.max(maxTokens * 4, 2048),
       ...(json ? { responseMimeType: "application/json" } : {}),
-      // 2.5 の flash 系は「考える」トークンが出力枠を使うので、短い応答では切る
-      ...(model.includes("pro") ? {} : { thinkingConfig: { thinkingBudget: 0 } }),
     },
   };
 }
@@ -49,7 +48,7 @@ export async function geminiGenerate(opts: {
   const res = await fetch(`${BASE}/${model}:generateContent`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey() },
-    body: JSON.stringify(requestBody(opts.systemPrompt, opts.messages, opts.maxTokens, model, !!opts.json)),
+    body: JSON.stringify(requestBody(opts.systemPrompt, opts.messages, opts.maxTokens, !!opts.json)),
     signal: opts.signal,
   });
   if (!res.ok) throw new Error(`Gemini API error ${res.status}`);
@@ -70,7 +69,7 @@ export async function* geminiStream(opts: {
   const res = await fetch(`${BASE}/${model}:streamGenerateContent?alt=sse`, {
     method: "POST",
     headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey() },
-    body: JSON.stringify(requestBody(opts.systemPrompt, opts.messages, opts.maxTokens, model, false)),
+    body: JSON.stringify(requestBody(opts.systemPrompt, opts.messages, opts.maxTokens, false)),
     signal: opts.signal,
   });
   if (!res.ok || !res.body) throw new Error(`Gemini API error ${res.status}`);
