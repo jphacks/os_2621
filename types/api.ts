@@ -16,6 +16,7 @@ export type SummaryDraft = {
   tags: string[];
   energy_estimate: number;
   stage_estimate: Stage;
+  masked?: boolean;
 };
 
 export type CandidateDto = {

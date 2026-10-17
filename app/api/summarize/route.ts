@@ -53,15 +53,17 @@ export async function POST(req: Request) {
     });
 
     const masked = maskPII(draft.share_text);
+    const tagResults = draft.tags.map((t) => maskPII(t));
     // 要約の文にも危機を表す語が混ざっていないか確認する
     if (detectCrisisL1(masked.text).level === "crisis") return jsonError(403, "今は、人とつながる手順には進めません。");
 
     return NextResponse.json<SummaryDraft>({
       share_text: masked.text,
       category: draft.category,
-      tags: draft.tags.map((t) => maskPII(t).text),
+      tags: tagResults.map((t) => t.text),
       energy_estimate: draft.energy_estimate,
       stage_estimate: draft.stage_estimate,
+      masked: masked.masked || tagResults.some((t) => t.masked),
     });
   } catch {
     console.warn("[summarize] failed");

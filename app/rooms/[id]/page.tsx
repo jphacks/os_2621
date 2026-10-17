@@ -9,7 +9,10 @@ import { Textarea } from "@/components/ui/textarea";
 import { ScaleInput } from "@/components/scale-input";
 import { api } from "@/components/api";
 import { COPY, avatarEmoji } from "@/lib/copy";
+import { getFacilitatorConfig } from "@/lib/facilitator/config";
 import { createClient } from "@/lib/supabase/client";
+
+const DEMO_FAST = process.env.NEXT_PUBLIC_DEMO_FAST_TIMER === "true";
 
 type Message = {
   id: string;
@@ -64,6 +67,18 @@ export default function RoomPage() {
     });
   }, []);
 
+  const handleDeletedMessage = useCallback((deletedId: string | undefined, currentUid: string | null) => {
+    if (!deletedId) return;
+    setMessages((prev) => {
+      const target = prev.find((m) => m.id === deletedId);
+      if (target && currentUid && target.sender_id === currentUid) {
+        // 自分の発言が L2 危機判定によって取り消された場合は危機対応案内を表示する
+        setCrisis(true);
+      }
+      return prev.filter((m) => m.id !== deletedId);
+    });
+  }, []);
+
   const applyRoom = useCallback((r: RoomRow) => {
     setRoom(r);
     if (r.status === "ended") {
@@ -112,6 +127,9 @@ export default function RoomPage() {
           .on("postgres_changes", { event: "INSERT", schema: "public", table: "room_messages", filter: `room_id=eq.${id}` }, (p) =>
             mergeMessages([p.new as Message])
           )
+          .on("postgres_changes", { event: "DELETE", schema: "public", table: "room_messages" }, (p) =>
+            handleDeletedMessage((p.old as { id?: string } | undefined)?.id, uid)
+          )
           .on("postgres_changes", { event: "UPDATE", schema: "public", table: "rooms", filter: `id=eq.${id}` }, (p) =>
             applyRoom(p.new as RoomRow)
           )
@@ -131,9 +149,9 @@ export default function RoomPage() {
       cancelled = true;
       if (channel) void supabase.removeChannel(channel);
     };
-  }, [id, demo, applyRoom, mergeMessages]);
+  }, [id, demo, applyRoom, mergeMessages, handleDeletedMessage]);
 
-  // 残り時間と、25分・30分のファシリテーター呼び出し
+  // 残り時間と、25分・30分・沈黙のファシリテーター呼び出し
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
@@ -146,14 +164,21 @@ export default function RoomPage() {
   useEffect(() => {
     if (!room || demo || ended) return;
     const duration = endsAt - startedAt;
-    const fire = (event: "time_warning" | "closing") => {
-      if (firedRef.current.has(event)) return;
-      firedRef.current.add(event);
+    const fire = (key: string, event: "time_warning" | "closing" | "silence") => {
+      if (firedRef.current.has(key)) return;
+      firedRef.current.add(key);
       void api(`/api/rooms/${id}/facilitate`, { body: { event } }).catch(() => {});
     };
-    if (now - startedAt >= (duration * 5) / 6) fire("time_warning");
-    if (now >= endsAt) fire("closing");
-  }, [now, room, demo, ended, endsAt, startedAt, id]);
+    if (now - startedAt >= (duration * 5) / 6) fire("time_warning", "time_warning");
+    if (now >= endsAt) fire("closing", "closing");
+
+    const cfg = getFacilitatorConfig(DEMO_FAST);
+    const nonSystem = messages.filter((m) => m.sender_type !== "system" && m.created_at);
+    const lastMsgAt = nonSystem.length > 0 ? new Date(nonSystem[nonSystem.length - 1].created_at).getTime() : startedAt;
+    if (lastMsgAt > 0 && now - lastMsgAt >= cfg.SILENCE_THRESHOLD_MS) {
+      fire(`silence_${lastMsgAt}`, "silence");
+    }
+  }, [now, room, demo, ended, endsAt, startedAt, id, messages]);
 
   useEffect(() => {
     if (room?.status === "active" && endsAt && now >= endsAt && !endedText) setEndedText(COPY.room.ended);

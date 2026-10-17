@@ -34,11 +34,14 @@ export async function POST(req: Request) {
 
     // 個人情報のマスクを再適用し、L1でも再チェックする
     const text = maskPII(body.share_text);
-    const tags = body.tags.map((t) => maskPII(t).text);
-    if ([text.text, ...tags].some((t) => detectCrisisL1(t).level === "crisis")) {
+    const tagResults = body.tags.map((t) => maskPII(t));
+    const tags = tagResults.map((t) => t.text);
+    const checks = [text.text, ...tags].map((t) => detectCrisisL1(t));
+    if (checks.some((c) => c.level === "crisis")) {
       await setRiskBlock(admin, userId, "crisis");
       return jsonError(403, BLOCKED_MESSAGE);
     }
+    const riskLevel = checks.some((c) => c.level === "caution") ? "caution" : "none";
 
     // energy = (直近のチェックインの energy + AIの推定) / 2 を四捨五入（なければ3）
     const { data: checkin } = await admin
@@ -61,7 +64,7 @@ export async function POST(req: Request) {
         tags,
         energy,
         stage: body.stage_estimate,
-        risk_level: "none",
+        risk_level: riskLevel,
         share_consent: true,
         expires_at: new Date(Date.now() + EXPIRES_MS).toISOString(),
       })
@@ -69,7 +72,8 @@ export async function POST(req: Request) {
       .single();
     if (error) throw error;
 
-    return NextResponse.json({ id: data.id, masked: text.masked });
+    const masked = text.masked || tagResults.some((t) => t.masked);
+    return NextResponse.json({ id: data.id, masked });
   } catch {
     console.warn("[summaries] failed");
     return jsonError(500);
