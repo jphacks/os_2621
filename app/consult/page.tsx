@@ -85,6 +85,9 @@ export default function ConsultPage() {
       applyFlags({ matchingBlocked: true });
     }
 
+    // 返事が1文字も届かなかったとき（Gemini側の混雑など）は、やさしく知らせる
+    if (!reply && !sessionStore.getFlags().crisis) setError(COPY.generalError);
+
     const finalMessages = reply ? [...history, { role: "assistant" as const, content: reply }] : history;
     setMessages(finalMessages);
     sessionStore.setMessages(finalMessages);
