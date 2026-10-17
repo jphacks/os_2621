@@ -129,7 +129,12 @@ export async function POST(req: Request) {
         send({ type: "crisis" });
       } else {
         if (l2.level === "unknown") await setRiskBlock(admin, userId, "unknown").catch(() => {});
-        send({ type: "done", matchingBlocked: merged.blocked || alreadyBlocked });
+        const blocked = merged.blocked || alreadyBlocked;
+        if (blocked) {
+          // 止めた理由（調査用。会話の本文は出さない）
+          console.warn("[chat] matching blocked", { userId, previousRecord: alreadyBlocked, l2: l2.level });
+        }
+        send({ type: "done", matchingBlocked: blocked });
       }
       controller.close();
     },
