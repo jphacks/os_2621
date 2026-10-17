@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAdmin, getUserId, jsonError } from "@/lib/api/common";
-import { loadActiveMatchIds, loadBlockedIds, loadMySummary, toMatchSummary, type SummaryRow } from "@/lib/api/match";
+import { loadActiveMatchIds, loadAgeGroups, loadBlockedIds, loadMySummary, toMatchSummary, type SummaryRow } from "@/lib/api/match";
 import { isRiskBlocked } from "@/lib/api/risk";
 import { streamText } from "@/lib/llm/claude";
 import { loadPrompt } from "@/lib/llm/prompts";
@@ -44,22 +44,26 @@ export async function GET() {
     const mine = await loadMySummary(admin, userId);
     if (!mine) return jsonError(403, "共有した内容がありません。");
 
-    const [blockedUserIds, activeMatchUserIds] = await Promise.all([
-      loadBlockedIds(admin, userId),
-      loadActiveMatchIds(admin, userId),
-    ]);
-
-    const { data: others } = await admin
+    // 同じ年代の人だけを候補にする。自分の年代が未設定なら、候補は出さない
+    const rowsAll = ((await admin
       .from("summaries")
       .select("*")
       .eq("share_consent", true)
       .neq("user_id", userId)
       .neq("risk_level", "crisis")
       .gt("expires_at", new Date().toISOString())
-      .limit(200);
+      .limit(200)).data ?? []) as SummaryRow[];
+    const ages = await loadAgeGroups(admin, [userId, ...rowsAll.map((r) => r.user_id)]);
+    const myAge = ages.get(userId);
+    if (!myAge) return jsonError(403, "年代がまだ選ばれていません。設定から選んでください。");
 
-    const rows = (others ?? []) as SummaryRow[];
-    const ranked = rankCandidates(toMatchSummary(mine), rows.map(toMatchSummary), {
+    const [blockedUserIds, activeMatchUserIds] = await Promise.all([
+      loadBlockedIds(admin, userId),
+      loadActiveMatchIds(admin, userId),
+    ]);
+
+    const rows = rowsAll;
+    const ranked = rankCandidates(toMatchSummary(mine, myAge), rows.map((r) => toMatchSummary(r, ages.get(r.user_id))), {
       blockedUserIds,
       activeMatchUserIds,
     });

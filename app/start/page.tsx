@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { AVATARS, COPY } from "@/lib/copy";
+import { AGE_GROUPS, AGE_GROUP_LABELS, isValidAgeGroup, type AgeGroup } from "@/lib/matching/score";
 import { sessionStore } from "@/components/session-store";
 import { createClient } from "@/lib/supabase/client";
 
@@ -24,6 +25,7 @@ export default function StartPage() {
   const router = useRouter();
   const [nickname, setNickname] = useState("");
   const [avatar, setAvatar] = useState<string>(AVATARS[0].id);
+  const [ageGroup, setAgeGroup] = useState<AgeGroup | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -32,6 +34,10 @@ export default function StartPage() {
     const invalid = validateNickname(nickname);
     if (invalid) {
       setError(invalid);
+      return;
+    }
+    if (!isValidAgeGroup(ageGroup)) {
+      setError(COPY.start.errors.age);
       return;
     }
     setError(null);
@@ -51,7 +57,7 @@ export default function StartPage() {
         }
         const { error: upsertError } = await supabase
           .from("profiles")
-          .upsert({ id: userId, nickname: name, avatar });
+          .upsert({ id: userId, nickname: name, avatar, age_group: ageGroup });
         if (upsertError) throw upsertError;
       }
       sessionStore.setProfile({ nickname: name, avatar });
@@ -93,6 +99,32 @@ export default function StartPage() {
               </p>
             )}
           </div>
+
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">{COPY.start.ageLabel}</legend>
+            <p className="text-xs text-muted-foreground">{COPY.start.ageHint}</p>
+            <div className="grid gap-2">
+              {AGE_GROUPS.map((g) => (
+                <label
+                  key={g}
+                  className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border px-3 text-sm transition-colors ${
+                    ageGroup === g ? "border-primary bg-accent" : "hover:bg-accent/50"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="age"
+                    value={g}
+                    checked={ageGroup === g}
+                    onChange={() => setAgeGroup(g)}
+                    className="h-4 w-4 accent-[hsl(var(--primary))]"
+                  />
+                  {AGE_GROUP_LABELS[g]}
+                </label>
+              ))}
+            </div>
+            <p className="text-xs text-muted-foreground">{COPY.start.ageNote}</p>
+          </fieldset>
 
           <fieldset className="space-y-2">
             <legend className="text-sm font-medium">{COPY.start.avatarLabel}</legend>

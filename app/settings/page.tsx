@@ -9,6 +9,7 @@ import { Input } from "@/components/ui/input";
 import { HotlineList } from "@/components/hotline-list";
 import { Disclaimer } from "@/components/disclaimer";
 import { api } from "@/components/api";
+import { AGE_GROUPS, AGE_GROUP_LABELS, type AgeGroup } from "@/lib/matching/score";
 import { sessionStore } from "@/components/session-store";
 import { COPY } from "@/lib/copy";
 import { createClient } from "@/lib/supabase/client";
@@ -23,10 +24,38 @@ export default function SettingsPage() {
   const [confirming, setConfirming] = useState(false);
   const [deleteMsg, setDeleteMsg] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [age, setAge] = useState<AgeGroup | null>(null);
+  const [ageDraft, setAgeDraft] = useState<AgeGroup | null>(null);
+  const [ageMsg, setAgeMsg] = useState<string | null>(null);
 
   useEffect(() => {
     setNickname(sessionStore.getProfile()?.nickname ?? "");
+    if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
+    const supabase = createClient();
+    void supabase.auth.getUser().then(async ({ data }) => {
+      if (!data.user) return;
+      const { data: row } = await supabase.from("profiles").select("age_group").eq("id", data.user.id).maybeSingle();
+      if (row?.age_group) setAge(row.age_group as AgeGroup);
+    });
   }, []);
+
+  // 年代は一度だけ選べる（変更はDB側でも拒否される）
+  async function saveAge() {
+    if (!ageDraft || age) return;
+    setBusy(true);
+    try {
+      const supabase = createClient();
+      const { data } = await supabase.auth.getUser();
+      if (!data.user) throw new Error("no user");
+      const { error } = await supabase.from("profiles").update({ age_group: ageDraft }).eq("id", data.user.id);
+      if (error) throw error;
+      setAge(ageDraft);
+      setAgeMsg(COPY.settings.ageSaved);
+    } catch {
+      setAgeMsg(COPY.generalError);
+    }
+    setBusy(false);
+  }
 
   async function saveNickname(e: React.FormEvent) {
     e.preventDefault();
@@ -91,6 +120,54 @@ export default function SettingsPage() {
               {COPY.settings.nicknameSave}
             </Button>
           </form>
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader>
+          <CardTitle className="text-base">{COPY.settings.ageTitle}</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3 text-sm">
+          {age ? (
+            <>
+              <p>
+                {COPY.settings.ageSet}
+                {AGE_GROUP_LABELS[age]}
+              </p>
+              <p className="text-xs leading-relaxed text-muted-foreground">{COPY.settings.ageLocked}</p>
+            </>
+          ) : (
+            <>
+              <p className="text-xs leading-relaxed text-muted-foreground">{COPY.settings.ageUnset}</p>
+              <div className="grid gap-2">
+                {AGE_GROUPS.map((g) => (
+                  <label
+                    key={g}
+                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border px-3 ${
+                      ageDraft === g ? "border-primary bg-accent" : "hover:bg-accent/50"
+                    }`}
+                  >
+                    <input
+                      type="radio"
+                      name="age"
+                      checked={ageDraft === g}
+                      onChange={() => setAgeDraft(g)}
+                      className="h-4 w-4 accent-[hsl(var(--primary))]"
+                    />
+                    {AGE_GROUP_LABELS[g]}
+                  </label>
+                ))}
+              </div>
+              <Button onClick={() => void saveAge()} disabled={busy || !ageDraft}>
+                {COPY.settings.ageSave}
+              </Button>
+            </>
+          )}
+          {ageMsg && (
+            <p role="status" className="text-muted-foreground">
+              {ageMsg}
+            </p>
+          )}
         </CardContent>
       </Card>
 

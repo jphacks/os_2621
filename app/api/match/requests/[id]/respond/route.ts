@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAdmin, getUserId, jsonError } from "@/lib/api/common";
-import { loadBlockedIds } from "@/lib/api/match";
+import { loadAgeGroups, loadBlockedIds } from "@/lib/api/match";
 import { isRiskBlocked } from "@/lib/api/risk";
 import { getFacilitatorConfig } from "@/lib/facilitator/config";
 import { composeFacilitatorText, insertMessage } from "@/lib/rooms/service";
@@ -41,6 +41,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
     if (blocked.includes(request.from_user) || (await isRiskBlocked(admin, userId)) || (await isRiskBlocked(admin, request.from_user))) {
       return jsonError(409, "いまは、つなぐことができません。");
     }
+
+    // 年代が同じで、どちらも設定済みのときだけつなぐ（承諾の時点でも確認する）
+    const ages = await loadAgeGroups(admin, [request.from_user, request.to_user]);
+    const fromAge = ages.get(request.from_user);
+    if (!fromAge || fromAge !== ages.get(request.to_user)) return jsonError(409, "いまは、つなぐことができません。");
 
     // 先に pending → accepted にした1回だけがルームを作る
     const { data: claimed } = await admin

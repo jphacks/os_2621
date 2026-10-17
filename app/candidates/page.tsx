@@ -19,7 +19,7 @@ export default function CandidatesPage() {
     api<{ candidates: Candidate[] }>("/api/match/candidates")
       .then((r) => setCandidates(r.candidates.slice(0, 3)))
       .catch((e) => {
-        setLoadError(e instanceof ApiError && e.status === 403 ? COPY.candidates.noSummary : COPY.generalError);
+        setLoadError(e instanceof ApiError && e.status === 403 ? e.userMessage || COPY.candidates.noSummary : COPY.generalError);
         setCandidates([]);
       });
   }, []);

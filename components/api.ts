@@ -39,7 +39,11 @@ export type SentRequest = {
 export type RequestsResponse = { received: ReceivedRequest[]; sent: SentRequest[] };
 
 export class ApiError extends Error {
-  constructor(public status: number) {
+  constructor(
+    public status: number,
+    /** サーバーが返した、利用者向けのやさしい文（なければ空） */
+    public userMessage = ""
+  ) {
     super(`api error ${status}`);
   }
 }
@@ -50,6 +54,9 @@ export async function api<T>(path: string, init?: { method?: string; body?: unkn
     headers: init?.body ? { "Content-Type": "application/json" } : undefined,
     body: init?.body ? JSON.stringify(init.body) : undefined,
   });
-  if (!res.ok) throw new ApiError(res.status);
+  if (!res.ok) {
+    const body = (await res.json().catch(() => null)) as { error?: unknown } | null;
+    throw new ApiError(res.status, typeof body?.error === "string" ? body.error : "");
+  }
   return (await res.json()) as T;
 }

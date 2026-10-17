@@ -1,6 +1,6 @@
 import "server-only";
 import type { AdminClient } from "@/lib/api/common";
-import type { MatchSummary } from "@/lib/matching/score";
+import { isValidAgeGroup, type AgeGroup, type MatchSummary } from "@/lib/matching/score";
 
 export type SummaryRow = {
   id: string;
@@ -15,8 +15,9 @@ export type SummaryRow = {
   expires_at: string;
 };
 
-export function toMatchSummary(r: SummaryRow): MatchSummary {
+export function toMatchSummary(r: SummaryRow, ageGroup?: AgeGroup): MatchSummary {
   return {
+    ageGroup,
     id: r.id,
     userId: r.user_id,
     category: r.category,
@@ -72,4 +73,13 @@ export async function loadActiveMatchIds(admin: AdminClient, userId: string): Pr
     }
   }
   return [...ids];
+}
+
+/** ユーザーの年代区分。未設定・不正な値は含めない（= 候補にしない。fail-closed） */
+export async function loadAgeGroups(admin: AdminClient, userIds: string[]): Promise<Map<string, AgeGroup>> {
+  const map = new Map<string, AgeGroup>();
+  if (userIds.length === 0) return map;
+  const { data } = await admin.from("profiles").select("id,age_group").in("id", userIds);
+  (data ?? []).forEach((p) => isValidAgeGroup(p.age_group) && map.set(p.id, p.age_group));
+  return map;
 }
