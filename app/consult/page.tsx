@@ -6,7 +6,7 @@ import { HeartHandshake, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Disclaimer } from "@/components/disclaimer";
-import { readChatStream } from "@/components/consult/stream";
+import { isBlocked, readChatStream } from "@/components/consult/stream";
 import { sessionStore, type ChatMessage } from "@/components/session-store";
 import { COPY } from "@/lib/copy";
 
@@ -66,6 +66,8 @@ export default function ConsultPage() {
       if (!res.ok) throw new Error("chat failed");
 
       for await (const ev of readChatStream(res)) {
+        // blocked / matchingBlocked は、どのイベントに付いていても「話を整理する」を無効にする
+        if (isBlocked(ev)) applyFlags({ matchingBlocked: true });
         if (ev.type === "crisis") {
           // 通常の応答は出さず、危機対応に切り替える
           reply = "";
@@ -76,7 +78,6 @@ export default function ConsultPage() {
           reply += ev.text;
           setMessages([...history, { role: "assistant", content: reply }]);
         }
-        if (ev.type === "done" && ev.matchingBlocked) applyFlags({ matchingBlocked: true });
       }
     } catch {
       // 応答の取得に失敗したら安全側に倒し、このセッションのマッチングは止める

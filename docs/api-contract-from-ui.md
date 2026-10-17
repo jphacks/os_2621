@@ -31,6 +31,7 @@ Aさんへ。画面側は下の形で `fetch` しています。違う形にす�
   - `{"type":"delta","text":"..."}` 応答の続き
   - `{"type":"crisis"}` 危機を検知（UIは応答を捨てて、窓口案内に切り替える）
   - `{"type":"done","matchingBlocked":true|false}`
+  - `blocked: true` または `matchingBlocked: true` は、どのイベントに付いていても有効（そのセッションの「話を整理する」を無効にする）
 - `text/plain`: 応答テキストそのもの
 
 ## Supabase を直接使っている箇所（RLSの確認をお願いします）
