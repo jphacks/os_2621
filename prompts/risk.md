@@ -8,3 +8,4 @@
 ## 出力
 JSONだけを出力する。説明文は付けない。
 {"level":"none|caution|crisis","categories":["self_harm"|"suicide"|"abuse"|"violence"|"other"],"reason":"30字以内"}
+

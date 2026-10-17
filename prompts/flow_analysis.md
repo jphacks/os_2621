@@ -8,3 +8,4 @@
 ## 出力
 JSONだけを出力する。
 {"negative_streak":false,"rumination":false,"hostility":false,"pii_attempt":false}
+

@@ -12,3 +12,4 @@
 ## 出力
 JSONだけを出力する。
 {"share_text":"","category":"","tags":[],"energy_estimate":1,"stage_estimate":""}
+
