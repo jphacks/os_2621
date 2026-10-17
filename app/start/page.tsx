@@ -55,6 +55,13 @@ export default function StartPage() {
           if (signInError || !data.user) throw signInError ?? new Error("no user");
           userId = data.user.id;
         }
+        // すでに年代が登録されているユーザーが、別の年代を選んだときは、理由を伝えて止める（年代は変えられない）
+        const { data: existing } = await supabase.from("profiles").select("age_group").eq("id", userId).maybeSingle();
+        if (existing?.age_group && existing.age_group !== ageGroup) {
+          setError(COPY.start.errors.ageLocked);
+          setBusy(false);
+          return;
+        }
         const { error: upsertError } = await supabase
           .from("profiles")
           .upsert({ id: userId, nickname: name, avatar, age_group: ageGroup });
