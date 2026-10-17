@@ -63,5 +63,23 @@ export const HOTLINES: readonly Hotline[] = [
     cost: "ナビダイヤル通話料がかかります",
     isEmergency: false,
   },
+  {
+    id: "kodomo-sos",
+    name: "24時間子供SOSダイヤル（文部科学省）",
+    phone: "0120-0-78310",
+    hours: "24時間（年中無休）",
+    description: "いじめや学校の人間関係など、学生・子どものSOSをいつでも相談できる窓口です。",
+    cost: "無料",
+    isEmergency: false,
+  },
+  {
+    id: "childline",
+    name: "チャイルドライン（18歳までの専用窓口）",
+    phone: "0120-99-7777",
+    hours: "午後4時〜午後9時（毎日）",
+    description: "18歳までの子ども（中高生など）専用の、どんなことでも話せる相談窓口です。",
+    cost: "無料",
+    isEmergency: false,
+  },
 ] as const;
 
