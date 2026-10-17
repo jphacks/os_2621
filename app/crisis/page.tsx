@@ -9,7 +9,7 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+import { COPY } from "@/lib/copy";
 
 const HOTLINES_PREVIEW = [
   {
@@ -43,15 +43,8 @@ export default function CrisisPage() {
     <div className="space-y-6">
       <Card className="border-destructive/40">
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Badge className="bg-destructive text-destructive-foreground">
-              P8
-            </Badge>
-            <CardTitle>今すぐ相談できる専門窓口（困ったときは）</CardTitle>
-          </div>
-          <CardDescription>
-            ひとりで抱え込まず、専門の相談員に今の気持ちを話してみませんか。AIや仲間は専門家の代わりではありません。
-          </CardDescription>
+          <CardTitle>{COPY.crisis.title}</CardTitle>
+          <CardDescription>{COPY.crisis.lead}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3">
@@ -75,18 +68,16 @@ export default function CrisisPage() {
           </div>
 
           <div className="rounded-lg border bg-secondary/50 p-4 text-sm space-y-1">
-            <p className="font-medium">少しだけ呼吸を整えるガイド</p>
-            <p className="text-muted-foreground">
-              まずは足の裏が床についている感覚を確かめて、4秒かけて鼻から息を吸い、6秒かけてゆっくり吐き出してみましょう。
-            </p>
+            <p className="font-medium">{COPY.crisis.guideTitle}</p>
+            <p className="text-muted-foreground">{COPY.crisis.guide}</p>
           </div>
         </CardContent>
         <CardFooter className="flex flex-wrap gap-3">
           <Button asChild variant="outline">
-            <Link href="/consult">AI相談に戻る（P3）</Link>
+            <Link href="/consult">{COPY.crisis.back}</Link>
           </Button>
           <Button asChild variant="ghost">
-            <Link href="/">トップへ戻る（P0）</Link>
+            <Link href="/">{COPY.crisis.top}</Link>
           </Button>
         </CardFooter>
       </Card>
