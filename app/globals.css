@@ -1,0 +1,39 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* 彩度の低い暖色系（ひだまりテーマ） */
+    --background: 36 33% 97%;
+    --foreground: 28 20% 20%;
+    --card: 36 30% 99%;
+    --card-foreground: 28 20% 20%;
+    --popover: 36 30% 99%;
+    --popover-foreground: 28 20% 20%;
+    --primary: 28 45% 42%;
+    --primary-foreground: 36 33% 98%;
+    --secondary: 34 25% 91%;
+    --secondary-foreground: 28 25% 25%;
+    --muted: 34 20% 92%;
+    --muted-foreground: 28 12% 44%;
+    --accent: 34 30% 89%;
+    --accent-foreground: 28 25% 22%;
+    --destructive: 0 65% 48%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 32 20% 86%;
+    --input: 32 20% 86%;
+    --ring: 28 45% 42%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground antialiased;
+    font-feature-settings: "palt" 1;
+  }
+}
