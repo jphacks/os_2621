@@ -135,6 +135,20 @@ export const COPY = {
     failed: "うまく処理できませんでした。もう一度ためしてください。",
   },
 
+  settings: {
+    title: "設定",
+    nicknameTitle: "ニックネームを変える",
+    nicknameSave: "変更する",
+    nicknameSaved: "変更しました。",
+    hotlinesTitle: "相談できる窓口",
+    deleteTitle: "データを全部消す",
+    deleteLead:
+      "あなたのプロフィール・共有した要約・リクエスト・送ったメッセージ・気分の記録を消して、ログアウトします。元に戻せません。（ブロックと通報の記録は、安全のため残ります）",
+    deleteStart: "全データを削除する",
+    deleteConfirm: "本当に削除する",
+    deleteCancel: "やめる",
+    deleteFailed: "削除できませんでした。時間をおいて、もう一度ためしてください。",
+  },
   room: {
     leave: "退出",
     block: "ブロック",

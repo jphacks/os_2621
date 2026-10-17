@@ -231,7 +231,7 @@ export default function RoomPage() {
   return (
     <div className="flex min-h-[calc(100vh-10rem)] flex-col">
       {/* 常に表示するヘッダー: 残り時間・退出・ブロック・通報 */}
-      <div className="sticky top-[88px] z-30 -mx-4 border-b bg-background/95 px-4 py-2 backdrop-blur">
+      <div className="sticky top-[var(--header-h,65px)] z-30 -mx-4 border-b bg-background/95 px-4 py-2 backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <span className="text-sm text-muted-foreground" aria-live="off">
             {COPY.room.remaining} <span className="font-mono">{room ? formatRemaining(remaining) : "--:--"}</span>
