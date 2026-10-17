@@ -8,6 +8,7 @@
    1. `001_schema.sql` — テーブル
    2. `002_rls.sql` — RLS と Realtime
    3. `003_seed.sql` — デモ用ユーザー5人（`is_demo = true`）
+   4. `004_age_group.sql` — 年代区分（`profiles.age_group`）。一度選んだ年代は変えられない（トリガー）
 4. `.env.local` を作り、`.env.example` の値を埋める（`.env.local` は git に入れない。このリポジトリは Public）。
    - `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY`: Project Settings → API
    - `SUPABASE_SERVICE_ROLE_KEY`: 同じ画面の service_role（**サーバー専用。`NEXT_PUBLIC_` を付けない**）
@@ -28,10 +29,12 @@ Claude の代わりに、無料枠のある Google Gemini を使えます。
 
 ## 2. 設計のポイント
 
+- **同年代どうしのマッチング**: `profiles.age_group`（中学生 / 高校生 / 大学生）が同じで、どちらも設定済みの人だけが候補・リクエスト・承諾の対象（`lib/matching/score.ts`）。未設定は除外（fail-closed）。
+
 - **クライアントから書けるのは `profiles`（自分の行）だけ**。ほかの書き込みはすべて API（service role）を通す。
 - `room_messages` は、SELECT がルームのメンバーだけ。INSERT/UPDATE/DELETE のポリシーがない（= クライアントから書けない）ので、安全チェックを迂回できない。
 - `blocks` / `reports` / `session_risk` は、ポリシーなし（クライアントから見えない）。`blocks` と `reports` はユーザー削除後も残す。
-- `session_risk`: AI相談で crisis（24時間）・L2の失敗（30分）になったユーザーを覚えておく。`/api/summarize`・`/api/summaries`・`/api/match/*` は、これを見て拒否する（UIの無効化だけに頼らない）。確認に失敗したときも「止める」側に倒す。
+- `session_risk`: AI相談で crisis（24時間）・L2の失敗（5分）になったユーザーを覚えておく。`/api/summarize`・`/api/summaries`・`/api/match/*` は、これを見て拒否する（UIの無効化だけに頼らない）。確認に失敗したときも「止める」側に倒す。
 - ログには ID と判定結果だけを出す。相談やメッセージの本文は出さない。
 
 ## 3. RLS の確認手順（SQL Editor）

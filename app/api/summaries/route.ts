@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAdmin, getUserId, jsonError } from "@/lib/api/common";
 import { isRiskBlocked, setRiskBlock } from "@/lib/api/risk";
-import { combineEnergy } from "@/lib/matching/score";
+import { combineEnergy, isValidAgeGroup } from "@/lib/matching/score";
 import { detectCrisisL1 } from "@/lib/safety/detectCrisis";
 import { maskPII } from "@/lib/safety/piiMask";
 
@@ -12,6 +12,7 @@ const bodySchema = z.object({
   tags: z.array(z.string().trim().min(1).max(20)).max(6),
   energy_estimate: z.number().int().min(1).max(5),
   stage_estimate: z.enum(["struggling", "coping", "recovering"]),
+  age_group: z.string().optional(),
 });
 
 const EXPIRES_MS = 24 * 60 * 60 * 1000; // 共有した要約は24時間（SPEC §5.4）
@@ -52,6 +53,14 @@ export async function POST(req: Request) {
       .limit(1)
       .maybeSingle();
     const energy = combineEnergy(checkin?.energy ?? 3, body.energy_estimate);
+
+    // 年代が渡されていて、未設定の場合は profiles に保存する
+    if (isValidAgeGroup(body.age_group)) {
+      const { data: profile } = await admin.from("profiles").select("age_group").eq("id", userId).maybeSingle();
+      if (profile && !profile.age_group) {
+        await admin.from("profiles").update({ age_group: body.age_group }).eq("id", userId);
+      }
+    }
 
     // 共有している要約は最新の1件だけにする
     await admin.from("summaries").delete().eq("user_id", userId);

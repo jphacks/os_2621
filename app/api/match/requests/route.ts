@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAdmin, getUserId, jsonError } from "@/lib/api/common";
-import { loadActiveMatchIds, loadBlockedIds, loadMySummary, toMatchSummary, type SummaryRow } from "@/lib/api/match";
+import { loadActiveMatchIds, loadAgeGroups, loadBlockedIds, loadMySummary, toMatchSummary, type SummaryRow } from "@/lib/api/match";
 import { isRiskBlocked } from "@/lib/api/risk";
 import { isEligibleCandidate } from "@/lib/matching/score";
 import type { ReceivedRequestDto, SentRequestDto } from "@/types/api";
@@ -44,7 +44,14 @@ export async function POST(req: Request) {
       loadBlockedIds(admin, userId),
       loadActiveMatchIds(admin, userId),
     ]);
-    if (!isEligibleCandidate(toMatchSummary(mine), toMatchSummary(target as SummaryRow), { blockedUserIds, activeMatchUserIds })) {
+    const ages = await loadAgeGroups(admin, [userId, to_user]);
+    if (!ages.get(userId)) return jsonError(403, "年代がまだ選ばれていません。設定から選んでください。");
+    if (
+      !isEligibleCandidate(toMatchSummary(mine, ages.get(userId)), toMatchSummary(target as SummaryRow, ages.get(to_user)), {
+        blockedUserIds,
+        activeMatchUserIds,
+      })
+    ) {
       return jsonError(409, "この方には、いまはお願いできません。");
     }
     // 相手が危機の状態なら、理由は伏せて同じ表示にする

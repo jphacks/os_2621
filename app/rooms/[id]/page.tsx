@@ -3,14 +3,18 @@
 import Link from "next/link";
 import { useParams, useRouter } from "next/navigation";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Flag, LogOut, Send, ShieldOff } from "lucide-react";
+import { Bot, Flag, Heart, HeartHandshake, LogOut, Phone, Send, ShieldOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { ScaleInput } from "@/components/scale-input";
+import { BreatheGuide } from "@/components/breathe-guide";
+import { HotlineList } from "@/components/hotline-list";
+import { CallPanel, CallPreConfirmModal } from "@/components/room/call-panel";
 import { api } from "@/components/api";
 import { COPY, avatarEmoji } from "@/lib/copy";
 import { getFacilitatorConfig } from "@/lib/facilitator/config";
 import { createClient } from "@/lib/supabase/client";
+import { useRoomCall } from "@/lib/webrtc/useRoomCall";
 
 const DEMO_FAST = process.env.NEXT_PUBLIC_DEMO_FAST_TIMER === "true";
 
@@ -53,10 +57,12 @@ export default function RoomPage() {
   const [now, setNow] = useState(() => Date.now());
   const [loadFailed, setLoadFailed] = useState(false);
   const [review, setReview] = useState({ mood: 3, energy: 3 });
+  const [isCallModalOpen, setIsCallModalOpen] = useState(false);
   const firedRef = useRef<Set<string>>(new Set());
   const bottomRef = useRef<HTMLDivElement>(null);
 
   const partnerId = Object.keys(people).find((k) => k !== me) ?? (demo ? "partner" : null);
+  const partnerNickname = (partnerId ? people[partnerId]?.nickname : undefined) ?? "お相手";
   const ended = !!endedText || crisis;
 
   const mergeMessages = useCallback((incoming: Message[]) => {
@@ -66,6 +72,32 @@ export default function RoomPage() {
       return [...map.values()].sort((a, b) => a.created_at.localeCompare(b.created_at));
     });
   }, []);
+
+  const handleCallConnected = useCallback(() => {
+    mergeMessages([
+      {
+        id: `call-ai-${Date.now()}`,
+        sender_id: null,
+        sender_type: "ai",
+        body: COPY.call.aiFacilitatorJoined,
+        created_at: new Date().toISOString(),
+      },
+    ]);
+  }, [mergeMessages]);
+
+  const call = useRoomCall({
+    roomId: id,
+    userId: me ?? (demo ? "me" : ""),
+    isDemo: demo,
+    partnerNickname,
+    onConnected: handleCallConnected,
+  });
+
+  useEffect(() => {
+    if (ended && call.state.status !== "idle" && call.state.status !== "ended") {
+      call.endCall();
+    }
+  }, [ended, call]);
 
   const handleDeletedMessage = useCallback((deletedId: string | undefined, currentUid: string | null) => {
     if (!deletedId) return;
@@ -222,16 +254,19 @@ export default function RoomPage() {
   }
 
   async function leave() {
+    call.endCall();
     if (!demo) await api(`/api/rooms/${id}/leave`, { method: "POST", body: {} }).catch(() => {});
     setEndedText(COPY.room.ended);
   }
 
   async function block() {
+    call.endCall();
     if (!demo && partnerId) await api("/api/blocks", { body: { blocked_user_id: partnerId, room_id: id } }).catch(() => {});
     setEndedText(COPY.room.ended);
   }
 
   async function report(reason: string) {
+    call.endCall();
     setReporting(false);
     if (!demo && partnerId) await api("/api/reports", { body: { reported_user_id: partnerId, room_id: id, reason } }).catch(() => {});
     setEndedText(COPY.room.endedReport);
@@ -255,24 +290,38 @@ export default function RoomPage() {
 
   return (
     <div className="flex min-h-[calc(100vh-10rem)] flex-col">
-      {/* 常に表示するヘッダー: 残り時間・退出・ブロック・通報 */}
+      {/* 常に表示するヘッダー: 残り時間・退出・ブロック・通報・通話提案 */}
       <div className="sticky top-[var(--header-h,65px)] z-30 -mx-4 border-b bg-background/95 px-4 py-2 backdrop-blur">
         <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="text-sm text-muted-foreground" aria-live="off">
-            {COPY.room.remaining} <span className="font-mono">{room ? formatRemaining(remaining) : "--:--"}</span>
-          </span>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={() => void leave()} disabled={ended}>
-              <LogOut className="h-4 w-4" aria-hidden="true" />
-              {COPY.room.leave}
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            <span className="text-xs sm:text-sm text-muted-foreground whitespace-nowrap" aria-live="off">
+              {COPY.room.remaining} <span className="font-mono">{room ? formatRemaining(remaining) : "--:--"}</span>
+            </span>
+            {/* 音声通話提案ボタン（通話中でなく、ルームが終了していないとき） */}
+            {!ended && call.state.status === "idle" && (
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => setIsCallModalOpen(true)}
+                className="border-primary/40 text-primary hover:bg-primary/5 min-h-[32px] text-xs px-2 sm:px-3"
+              >
+                <Phone className="mr-1 h-3.5 w-3.5 text-primary" aria-hidden="true" />
+                {COPY.call.proposeButton}
+              </Button>
+            )}
+          </div>
+          <div className="flex flex-wrap items-center gap-1.5 sm:gap-2">
+            <Button size="sm" variant="outline" className="px-2 sm:px-3 text-xs sm:text-sm min-h-[32px]" onClick={() => void leave()} disabled={ended}>
+              <LogOut className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
+              <span>{COPY.room.leave}</span>
             </Button>
-            <Button size="sm" variant="outline" onClick={() => void block()} disabled={ended}>
-              <ShieldOff className="h-4 w-4" aria-hidden="true" />
-              {COPY.room.block}
+            <Button size="sm" variant="outline" className="px-2 sm:px-3 text-xs sm:text-sm min-h-[32px]" onClick={() => void block()} disabled={ended}>
+              <ShieldOff className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
+              <span>{COPY.room.block}</span>
             </Button>
-            <Button size="sm" variant="outline" onClick={() => setReporting((v) => !v)} disabled={ended}>
-              <Flag className="h-4 w-4" aria-hidden="true" />
-              {COPY.room.report}
+            <Button size="sm" variant="outline" className="px-2 sm:px-3 text-xs sm:text-sm min-h-[32px]" onClick={() => setReporting((v) => !v)} disabled={ended}>
+              <Flag className="h-3.5 w-3.5 sm:h-4 sm:w-4" aria-hidden="true" />
+              <span>{COPY.room.report}</span>
             </Button>
           </div>
         </div>
@@ -288,6 +337,22 @@ export default function RoomPage() {
             </div>
           </div>
         )}
+
+        {/* 通話パネル（リクエスト中、受信中、接続中、通話中、エラー表示時） */}
+        {(call.state.status !== "idle" && call.state.status !== "ended") || call.state.errorMessage ? (
+          <div className="pt-2">
+            <CallPanel
+              state={call.state}
+              formattedDuration={call.formattedDuration}
+              partnerNickname={call.partnerNickname}
+              onAccept={call.acceptCall}
+              onReject={call.rejectCall}
+              onCancel={call.cancelCall}
+              onEnd={call.endCall}
+              onToggleMute={call.toggleMute}
+            />
+          </div>
+        ) : null}
       </div>
 
       {demo && <p className="pt-2 text-center text-xs text-muted-foreground">{COPY.room.demoNote}</p>}
@@ -310,12 +375,12 @@ export default function RoomPage() {
                 {isAi ? `🌿 ${COPY.room.ai}` : mine ? "" : `${avatarEmoji(person?.avatar)} ${person?.nickname ?? ""}`}
               </span>
               <div
-                className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed ${
+                className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-2.5 text-sm leading-relaxed shadow-sm transition-all ${
                   isAi
-                    ? "border border-dashed bg-secondary/60"
+                    ? "border border-dashed border-warmth-300/90 bg-warmth-50/80 text-foreground"
                     : mine
                       ? "bg-primary text-primary-foreground"
-                      : "border bg-card"
+                      : "border border-border/80 bg-card shadow-hidamari-soft"
                 }`}
               >
                 {m.body}
@@ -325,29 +390,61 @@ export default function RoomPage() {
         })}
 
         {crisis && (
-          <div role="alert" className="space-y-3 rounded-xl border border-destructive/40 bg-card p-4 text-sm">
-            <p className="font-medium">{COPY.consult.crisisTitle}</p>
-            <p className="leading-relaxed text-muted-foreground">{COPY.consult.crisisBody}</p>
-            <Button asChild variant="destructive">
-              <Link href="/crisis">{COPY.consult.crisisButton}</Link>
-            </Button>
+          <div role="alert" className="space-y-4 rounded-2xl border border-destructive/30 bg-card p-5 shadow-hidamari">
+            <div className="flex items-center gap-2 text-destructive font-medium text-sm">
+              <Heart className="h-4 w-4" aria-hidden="true" />
+              <span>{COPY.consult.crisisTitle}</span>
+            </div>
+            <p className="leading-relaxed text-sm text-foreground">
+              ここまで話してくれてありがとうございます。いま抱えているつらいお気持ちを、どうか一人で抱え込まないでください。
+            </p>
+            <p className="leading-relaxed text-xs text-muted-foreground">
+              安全のため、ピア同士のチャットルームは一度終了させていただきました。あなたの心と命を守るため、いつでも頼れる専門窓口や、あなたのペースで話せるAI相談ルームをご用意しています。
+            </p>
+
+            <BreatheGuide autoStart={false} />
+
+            <div className="space-y-2 pt-1">
+              <p className="text-xs font-medium text-foreground">いつでも相談できる無料窓口:</p>
+              <HotlineList tone="crisis" />
+            </div>
+
+            <div className="flex flex-wrap items-center gap-3 pt-2">
+              <Button asChild variant="outline" className="min-h-[44px]">
+                <Link href="/consult">
+                  <Bot className="mr-2 h-4 w-4 text-primary" aria-hidden="true" />
+                  <span>AI相談ルームで今の気持ちをゆっくり話す</span>
+                </Link>
+              </Button>
+              <Button asChild variant="destructive" className="min-h-[44px]">
+                <Link href="/crisis">
+                  <HeartHandshake className="mr-2 h-4 w-4" aria-hidden="true" />
+                  <span>{COPY.consult.crisisButton}</span>
+                </Link>
+              </Button>
+            </div>
           </div>
         )}
 
         {endedText && !crisis && (
-          <div className="space-y-4 rounded-xl border bg-card p-4">
-            <p role="status" className="text-center text-sm text-muted-foreground">
+          <div className="space-y-5 rounded-2xl border bg-card p-5 shadow-hidamari">
+            <p role="status" className="rounded-lg bg-secondary/50 py-2 text-center text-sm font-medium text-foreground">
               {endedText}
             </p>
-            <p className="text-sm font-medium">{COPY.room.reviewTitle}</p>
-            <p className="text-xs text-muted-foreground">{COPY.room.reviewLead}</p>
-            <ScaleInput id="r-mood" label={COPY.checkin.moodLabel} value={review.mood} onChange={(v) => setReview({ ...review, mood: v })} scale={COPY.checkin.moodScale} />
-            <ScaleInput id="r-energy" label={COPY.checkin.energyLabel} value={review.energy} onChange={(v) => setReview({ ...review, energy: v })} scale={COPY.checkin.energyScale} />
-            <div className="flex flex-wrap gap-3">
-              <Button onClick={() => void submitReview()}>{COPY.room.reviewSubmit}</Button>
-              <Button asChild variant="outline">
-                <Link href="/candidates">{COPY.room.reviewSkip}</Link>
-              </Button>
+
+            <BreatheGuide autoStart={false} />
+
+            <div className="space-y-3 border-t pt-3">
+              <p className="text-sm font-semibold">{COPY.room.reviewTitle}</p>
+              <p className="text-xs text-muted-foreground leading-relaxed">{COPY.room.reviewLead}</p>
+              <ScaleInput id="r-mood" label={COPY.checkin.moodLabel} value={review.mood} onChange={(v) => setReview({ ...review, mood: v })} scale={COPY.checkin.moodScale} />
+              <ScaleInput id="r-energy" label={COPY.checkin.energyLabel} value={review.energy} onChange={(v) => setReview({ ...review, energy: v })} scale={COPY.checkin.energyScale} />
+              <div className="flex flex-wrap gap-3 pt-2">
+                <Button onClick={() => void submitReview()} className="min-h-[44px]">{COPY.room.reviewSubmit}</Button>
+                <Button asChild variant="outline" className="min-h-[44px]">
+                  <Link href="/candidates">{COPY.room.reviewSkip}</Link>
+                </Button>
+              </div>
             </div>
           </div>
         )}
@@ -383,6 +480,13 @@ export default function RoomPage() {
           </div>
         </div>
       )}
+
+      {/* 音声通話開始前の安心確認モーダル */}
+      <CallPreConfirmModal
+        isOpen={isCallModalOpen}
+        onClose={() => setIsCallModalOpen(false)}
+        onConfirm={call.requestCall}
+      />
     </div>
   );
 }

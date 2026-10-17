@@ -3,8 +3,8 @@ import { HeartHandshake, Settings, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HeaderOffset } from "@/components/header-offset";
 
-// 画面遷移バーは開発・確認用。本番では NEXT_PUBLIC_DEV_NAV=true のときだけ表示する
-const SHOW_DEV_NAV = process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_DEV_NAV === "true";
+// 画面遷移バーは開発・確認用。NEXT_PUBLIC_DEV_NAV=true のときだけ表示する
+const SHOW_DEV_NAV = process.env.NEXT_PUBLIC_DEV_NAV === "true";
 
 const NAV_LINKS = [
   { id: "P0", label: "トップ", href: "/" },

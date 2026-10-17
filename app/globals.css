@@ -33,7 +33,21 @@
     @apply border-border;
   }
   body {
-    @apply bg-background text-foreground antialiased;
+    @apply bg-background text-foreground antialiased selection:bg-warmth-200 selection:text-foreground;
     font-feature-settings: "palt" 1;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+@layer utilities {
+  /* タップ領域を確実に 44px 以上確保するユーティリティ */
+  .touch-target {
+    min-height: 44px;
+    min-width: 44px;
+  }
+
+  /* やわらかなフォーカスリング */
+  .focus-hidamari {
+    @apply focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/40 focus-visible:ring-offset-2;
   }
 }

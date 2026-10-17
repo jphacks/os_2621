@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Disclaimer } from "@/components/disclaimer";
+import { PrivacyShieldBadge } from "@/components/privacy-shield-badge";
 import { api, ApiError, type SummaryDraft } from "@/components/api";
 import { sessionStore } from "@/components/session-store";
 import { COPY } from "@/lib/copy";
@@ -67,6 +68,7 @@ export default function SummaryPage() {
       const res = await api<{ id: string; masked?: boolean }>("/api/summaries", {
         body: { ...draft, share_text: draft.share_text.trim(), tags, checkin: sessionStore.getCheckin() },
       });
+      sessionStore.setSummaryShared(true);
       if (res.masked) {
         setMaskedNotice(true);
         await new Promise((r) => setTimeout(r, 1200));
@@ -117,7 +119,8 @@ export default function SummaryPage() {
   return (
     <div className="space-y-4">
       <Disclaimer />
-      <Card>
+      <PrivacyShieldBadge />
+      <Card className="shadow-hidamari">
         <CardHeader>
           <CardTitle>{COPY.summary.title}</CardTitle>
           <CardDescription>{COPY.summary.lead}</CardDescription>

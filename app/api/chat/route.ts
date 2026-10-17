@@ -1,4 +1,3 @@
-import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAdmin, getUserId, jsonError } from "@/lib/api/common";
 import { isRiskBlocked, setRiskBlock } from "@/lib/api/risk";
@@ -13,7 +12,29 @@ const bodySchema = z.object({
     .min(1)
     .max(40), // 直近20往復
   checkin: z.object({ mood: z.number().min(1).max(5), energy: z.number().min(1).max(5) }).nullish(),
+  age_group: z.string().optional(),
+  isCrisisCare: z.boolean().optional(),
 });
+
+const AGE_GROUP_LABEL_MAP: Record<string, string> = {
+  junior_high: "中学生",
+  high_school: "高校生",
+  university: "大学生",
+  graduate: "大学院生",
+  working: "社会人",
+  other: "その他",
+  中学生: "中学生",
+  高校生: "高校生",
+  大学生: "大学生",
+  大学院生: "大学院生",
+  社会人: "社会人",
+  その他: "その他",
+};
+
+function resolveAgeGroupLabel(raw?: string | null): string {
+  if (!raw) return "大学生";
+  return AGE_GROUP_LABEL_MAP[raw] || "大学生";
+}
 
 const riskSchema = z.object({
   level: z.enum(["none", "caution", "crisis"]),
@@ -23,7 +44,10 @@ const riskSchema = z.object({
 
 const line = (ev: ChatEvent) => `${JSON.stringify(ev)}\n`;
 
-// AI相談（ストリーミング）。L1（ルール）で止めるか、応答の生成とL2（LLM判定）を並列に走らせる。
+const FALLBACK_CRISIS_CARE_MESSAGE =
+  "ここまで話してくれて、本当にありがとうございます。いま一人で抱えきれないほど、つらく苦しいお気持ちなのですね。あなたは決して一人ではありません。画面のすぐ下にある相談窓口で、専門の相談員さんと一緒にあなたのペースでお話ししてみませんか。もちろん、このままここで私にお話ししてくれても大丈夫ですよ。";
+
+// AI相談（ストリーミング）。危機時は温かく受容する対話的誘導を行い、通常時は並列L2判定を行う。
 export async function POST(req: Request) {
   const userId = await getUserId();
   if (!userId) return jsonError(401);
@@ -32,7 +56,7 @@ export async function POST(req: Request) {
   if (!parsed.success || parsed.data.messages.at(-1)?.role !== "user") {
     return jsonError(400, "メッセージを確認して、もう一度送ってください。");
   }
-  const { messages, checkin } = parsed.data;
+  const { messages, checkin, isCrisisCare } = parsed.data;
   const latest = messages[messages.length - 1].content;
 
   let admin;
@@ -42,17 +66,84 @@ export async function POST(req: Request) {
     return jsonError(500);
   }
 
-  // L1: 危機なら、LLMを呼ばずに即座に切り替える
+  // ユーザープロファイルから年代を取得（未設定時はリクエストボディまたはフォールバック）
+  let profileAgeGroup: string | undefined;
+  try {
+    const { data: profile } = await admin
+      .from("profiles")
+      .select("age_group")
+      .eq("id", userId)
+      .maybeSingle();
+    if (profile?.age_group) {
+      profileAgeGroup = profile.age_group;
+    }
+  } catch {
+    // DB未接続時や取得失敗時はリクエストボディを参照
+  }
+  const ageGroupLabel = resolveAgeGroupLabel(profileAgeGroup ?? parsed.data.age_group);
+
+  // L1判定
   const l1 = detectCrisisL1(latest);
-  if (l1.level === "crisis") {
+  const isCrisisMode = l1.level === "crisis" || isCrisisCare === true;
+
+  const encoder = new TextEncoder();
+
+  // 危機検知時（L1または継続危機対話）: 安全設計としてマッチングは即座に停止するが、
+  // 機械的に会話を打ち切らず、温かい寄り添い応答（crisis_care）をストリーミングで届ける
+  if (isCrisisMode) {
     await setRiskBlock(admin, userId, "crisis").catch(() => {});
-    console.warn("[chat] L1 crisis", { userId });
-    return NextResponse.json<ChatEvent>({ type: "crisis" });
+    console.warn("[chat] Crisis care mode activated", {
+      userId,
+      l1: l1.level,
+      isCrisisCare,
+    });
+
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        const send = (ev: ChatEvent) => controller.enqueue(encoder.encode(line(ev)));
+        let streamedChars = 0;
+
+        try {
+          const system = await loadPrompt("crisis_care", {
+            mood: checkin?.mood ?? 1,
+            energy: checkin?.energy ?? 1,
+            age_group: ageGroupLabel,
+          });
+
+          for await (const text of streamText({
+            systemPrompt: system,
+            messages,
+            modelTier: "main",
+            maxTokens: 500,
+            timeoutMs: 30000,
+          })) {
+            streamedChars += text.length;
+            send({ type: "delta", text });
+          }
+        } catch (e) {
+          console.warn("[chat] crisis_care llm stream failed, using warm fallback", {
+            userId,
+            error: e instanceof Error ? e.message : "unknown",
+          });
+          if (streamedChars === 0) {
+            send({ type: "delta", text: FALLBACK_CRISIS_CARE_MESSAGE });
+          }
+        }
+
+        send({ type: "crisis" });
+        send({ type: "done", matchingBlocked: true });
+        controller.close();
+      },
+    });
+
+    return new Response(stream, {
+      headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" },
+    });
   }
 
   const alreadyBlocked = await isRiskBlocked(admin, userId);
 
-  // L2 は応答の生成と並列で走らせる。失敗・タイムアウト（5秒）は unknown（fail-closed）
+  // 通常フロー: L2 は応答の生成と並列で走らせる。失敗・タイムアウト（5秒）は unknown（fail-closed）
   const l2Promise: Promise<L2RiskResult> = (async () => {
     try {
       const transcript = messages
@@ -68,36 +159,22 @@ export async function POST(req: Request) {
       });
       return { level: r.level, categories: [], reason: r.reason ?? "" } as L2RiskResult;
     } catch (e) {
-      // 原因の調査用（エラーの種類だけ。会話の本文は出さない）
       console.warn("[chat] L2 failed", { userId, error: e instanceof Error ? e.message : "unknown" });
       return { level: "unknown" };
     }
   })();
 
   const abort = new AbortController();
-  const encoder = new TextEncoder();
 
   const stream = new ReadableStream<Uint8Array>({
     async start(controller) {
       const send = (ev: ChatEvent) => controller.enqueue(encoder.encode(line(ev)));
-      let crisis = false;
-
-      // L2 が途中で crisis と分かったら、応答を打ち切って crisis を送る
-      void l2Promise.then(async (l2) => {
-        if (l2.level === "crisis" && !crisis) {
-          crisis = true;
-          abort.abort();
-          await setRiskBlock(admin, userId, "crisis").catch(() => {});
-          console.warn("[chat] L2 crisis", { userId });
-          send({ type: "crisis" });
-          controller.close();
-        }
-      });
 
       try {
         const system = await loadPrompt("consult", {
           mood: checkin?.mood ?? 3,
           energy: checkin?.energy ?? 3,
+          age_group: ageGroupLabel,
         });
         for await (const text of streamText({
           systemPrompt: system,
@@ -107,29 +184,32 @@ export async function POST(req: Request) {
           timeoutMs: 30000,
           signal: abort.signal,
         })) {
-          if (crisis) return;
           send({ type: "delta", text });
         }
       } catch (e) {
-        if (crisis) return;
         console.warn("[chat] reply failed", { userId, error: e instanceof Error ? e.message : "unknown" });
-        // 応答の生成に失敗したら、安全側に倒してマッチングを止める
         await setRiskBlock(admin, userId, "unknown").catch(() => {});
         send({ type: "done", matchingBlocked: true });
         controller.close();
         return;
       }
 
+      // 応答ストリームが完了した後に、L2の判定結果を評価
+      // （途中でAIの言葉をぶつ切りにせず、最後まで届けてから危機イベントやブロックを送出する）
       const l2 = await l2Promise;
-      if (crisis) return;
       const merged = mergeRiskResults(l1, l2);
       if (merged.finalLevel === "crisis") {
-        crisis = true;
         await setRiskBlock(admin, userId, "crisis").catch(() => {});
+        console.warn("[chat] L2 crisis detected", { userId });
         send({ type: "crisis" });
+        send({ type: "done", matchingBlocked: true });
       } else {
         if (l2.level === "unknown") await setRiskBlock(admin, userId, "unknown").catch(() => {});
-        send({ type: "done", matchingBlocked: merged.blocked || alreadyBlocked });
+        const blocked = merged.blocked || alreadyBlocked;
+        if (blocked) {
+          console.warn("[chat] matching blocked", { userId, previousRecord: alreadyBlocked, l2: l2.level });
+        }
+        send({ type: "done", matchingBlocked: blocked });
       }
       controller.close();
     },
