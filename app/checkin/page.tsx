@@ -1,40 +1,64 @@
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+"use client";
 
+import { useRouter } from "next/navigation";
+import { useState } from "react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { COPY } from "@/lib/copy";
+import { ScaleInput } from "@/components/scale-input";
+import { sessionStore } from "@/components/session-store";
+
+// P2 気分チェックイン
 export default function CheckinPage() {
+  const router = useRouter();
+  const [mood, setMood] = useState(3);
+  const [energy, setEnergy] = useState(3);
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setBusy(true);
+    sessionStore.setCheckin({ mood, energy });
+    // 新しい相談セッションの開始。前回の危機フラグなどは引き継がない
+    sessionStore.clearConsult();
+    try {
+      const res = await fetch("/api/checkin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mood, energy }),
+      });
+      if (!res.ok) throw new Error("checkin failed");
+    } catch {
+      // 保存に失敗しても相談は続けられる（localの値は残してある）
+      setNotice(COPY.checkin.savingError);
+      await new Promise((r) => setTimeout(r, 1200));
+    }
+    router.push("/consult");
+  }
+
   return (
-    <div className="space-y-6">
+    <form onSubmit={onSubmit}>
       <Card>
         <CardHeader>
-          <div className="flex items-center gap-2">
-            <Badge>P2</Badge>
-            <CardTitle>気分チェックイン</CardTitle>
-          </div>
-          <CardDescription>
-            今の気分とエネルギーの度合い（1〜5）を教えてください。無理のないペースでお話ししましょう。
-          </CardDescription>
+          <CardTitle>{COPY.checkin.title}</CardTitle>
+          <CardDescription>{COPY.checkin.lead}</CardDescription>
         </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          <p>（Phase 2 で気分・エネルギースライダー（1〜5）を実装します）</p>
+        <CardContent className="space-y-8">
+          <ScaleInput id="mood" label={COPY.checkin.moodLabel} value={mood} onChange={setMood} scale={COPY.checkin.moodScale} />
+          <ScaleInput id="energy" label={COPY.checkin.energyLabel} value={energy} onChange={setEnergy} scale={COPY.checkin.energyScale} />
+          {notice && (
+            <p role="status" className="text-sm text-muted-foreground">
+              {notice}
+            </p>
+          )}
         </CardContent>
-        <CardFooter className="flex gap-3">
-          <Button asChild>
-            <Link href="/consult">AI相談へ進む（P3へ）</Link>
-          </Button>
-          <Button asChild variant="outline">
-            <Link href="/start">戻る（P1）</Link>
+        <CardFooter>
+          <Button type="submit" size="lg" disabled={busy}>
+            {COPY.checkin.submit}
           </Button>
         </CardFooter>
       </Card>
-    </div>
+    </form>
   );
 }

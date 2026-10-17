@@ -1,5 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { z } from "zod";
+import { geminiGenerate, geminiStream } from "@/lib/llm/gemini";
 
 export type ModelTier = "main" | "fast";
 
@@ -25,6 +26,11 @@ export interface GenerateJsonOptions<T = unknown> {
   timeoutMs?: number;
   schema?: z.ZodType<T>;
   signal?: AbortSignal;
+}
+
+// LLM_PROVIDER=gemini のとき、無料枠のある Google Gemini を使う（既定は Claude）
+function isGeminiProvider(): boolean {
+  return process.env.LLM_PROVIDER === "gemini";
 }
 
 function getAnthropicClient(): Anthropic {
@@ -100,9 +106,19 @@ export async function* streamText(
     signal,
   } = options;
 
+  const { controller, clear } = createTimeoutController(timeoutMs, signal);
+
+  if (isGeminiProvider()) {
+    try {
+      yield* geminiStream({ systemPrompt, messages, tier: modelTier, maxTokens, signal: controller.signal });
+    } finally {
+      clear();
+    }
+    return;
+  }
+
   const client = getAnthropicClient();
   const model = getModelId(modelTier);
-  const { controller, clear } = createTimeoutController(timeoutMs, signal);
 
   try {
     const stream = await client.messages.create(
@@ -177,9 +193,26 @@ export async function generateJson<T = unknown>(
     signal,
   } = options;
 
+  const { controller, clear } = createTimeoutController(timeoutMs, signal);
+
+  if (isGeminiProvider()) {
+    try {
+      const text = await geminiGenerate({
+        systemPrompt,
+        messages,
+        tier: modelTier,
+        maxTokens,
+        signal: controller.signal,
+        json: true,
+      });
+      return parseJsonResponse(text, schema);
+    } finally {
+      clear();
+    }
+  }
+
   const client = getAnthropicClient();
   const model = getModelId(modelTier);
-  const { controller, clear } = createTimeoutController(timeoutMs, signal);
 
   try {
     const response = await client.messages.create(

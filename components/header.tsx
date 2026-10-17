@@ -1,6 +1,10 @@
 import Link from "next/link";
 import { HeartHandshake, Settings, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { HeaderOffset } from "@/components/header-offset";
+
+// 画面遷移バーは開発・確認用。本番では NEXT_PUBLIC_DEV_NAV=true のときだけ表示する
+const SHOW_DEV_NAV = process.env.NODE_ENV !== "production" || process.env.NEXT_PUBLIC_DEV_NAV === "true";
 
 const NAV_LINKS = [
   { id: "P0", label: "トップ", href: "/" },
@@ -18,6 +22,7 @@ const NAV_LINKS = [
 export function Header() {
   return (
     <header className="sticky top-0 z-40 w-full border-b bg-background/95 backdrop-blur">
+      <HeaderOffset />
       <div className="mx-auto flex max-w-3xl items-center justify-between gap-2 px-4 py-2.5">
         <Link
           href="/"
@@ -48,6 +53,7 @@ export function Header() {
       </div>
 
       {/* 開発・デモ確認用の画面遷移バー（P0〜P9すべてに1クリックで遷移可能） */}
+      {SHOW_DEV_NAV && (
       <nav
         aria-label="画面一覧ナビゲーション"
         className="border-t bg-muted/40 px-4 py-1.5 overflow-x-auto"
@@ -68,6 +74,7 @@ export function Header() {
           ))}
         </ul>
       </nav>
+      )}
     </header>
   );
 }

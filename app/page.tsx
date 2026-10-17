@@ -1,50 +1,67 @@
-import Link from "next/link";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
+"use client";
 
+import Link from "next/link";
+import { useState } from "react";
+import { Sun } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
+import { COPY } from "@/lib/copy";
+
+// P0 トップ / 利用上の注意
 export default function TopPage() {
+  const [agreed, setAgreed] = useState(false);
+
   return (
     <div className="space-y-6">
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <Badge>P0</Badge>
-            <CardTitle>ひだまりへようこそ（トップ / 利用上の注意）</CardTitle>
+            <Sun className="h-6 w-6 text-primary" aria-hidden="true" />
+            <CardTitle className="text-xl">{COPY.appName}へようこそ</CardTitle>
           </div>
-          <CardDescription>
-            AIに今の気持ちを話し、あなたの意思で同じ悩みを持つ仲間と安全につながれる場所です。
-          </CardDescription>
+          <CardDescription className="leading-relaxed">{COPY.top.lead}</CardDescription>
         </CardHeader>
-        <CardContent className="space-y-4 text-sm leading-relaxed">
-          <div className="rounded-lg border bg-secondary/50 p-4 space-y-2">
+        <CardContent className="space-y-5 text-sm leading-relaxed">
+          <ul className="space-y-2">
+            {COPY.top.points.map((p) => (
+              <li key={p} className="flex gap-2">
+                <span aria-hidden="true">🌱</span>
+                <span>{p}</span>
+              </li>
+            ))}
+          </ul>
+
+          <div className="space-y-2 rounded-lg border bg-secondary/50 p-4">
             <p className="font-medium">ご利用にあたっての大切なお願い</p>
-            <ul className="list-disc pl-5 space-y-1 text-muted-foreground">
-              <li>
-                AIや仲間は専門家の代わりではありません（医療的な診断や治療は行いません）。
-              </li>
-              <li>
-                本名・連絡先・SNSアカウントなどの個人情報は入力・交換しないでください。
-              </li>
-              <li>
-                緊急の危険がある場合は、110番・119番または専門の相談窓口へご連絡ください。
-              </li>
+            <ul className="list-disc space-y-1 pl-5 text-muted-foreground">
+              {COPY.top.notices.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
             </ul>
           </div>
+
+          <label className="flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border p-3">
+            <input
+              type="checkbox"
+              checked={agreed}
+              onChange={(e) => setAgreed(e.target.checked)}
+              className="h-5 w-5 accent-[hsl(var(--primary))]"
+            />
+            <span>{COPY.top.consent}</span>
+          </label>
         </CardContent>
         <CardFooter className="flex flex-wrap gap-3">
-          <Button asChild>
-            <Link href="/start">同意してはじめる（P1へ）</Link>
-          </Button>
+          {agreed ? (
+            <Button asChild size="lg">
+              <Link href="/start">{COPY.top.start}</Link>
+            </Button>
+          ) : (
+            <Button size="lg" disabled>
+              {COPY.top.start}
+            </Button>
+          )}
           <Button asChild variant="outline">
-            <Link href="/crisis">相談窓口を見る（P8へ）</Link>
+            <Link href="/crisis">相談窓口を見る</Link>
           </Button>
         </CardFooter>
       </Card>
