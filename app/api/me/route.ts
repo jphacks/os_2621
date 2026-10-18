@@ -15,6 +15,7 @@ export async function GET() {
       summary,
       { data: members },
       { data: risk },
+      { data: pendingReceived },
     ] = await Promise.all([
       admin.from("profiles").select("nickname,avatar,age_group").eq("id", userId).maybeSingle(),
       admin
@@ -25,20 +26,98 @@ export async function GET() {
         .limit(1)
         .maybeSingle(),
       loadMySummary(admin, userId),
-      admin.from("room_members").select("room_id").eq("user_id", userId),
+      admin.from("room_members").select("room_id,left_at").eq("user_id", userId),
       admin.from("session_risk").select("level,blocked_until").eq("user_id", userId).maybeSingle(),
+      admin
+        .from("match_requests")
+        .select("id")
+        .eq("to_user", userId)
+        .eq("status", "pending")
+        .gt("expires_at", new Date().toISOString()),
     ]);
 
-    const riskActive = !!risk && new Date(risk.blocked_until).getTime() > Date.now();
+    const nowMs = Date.now();
+    const nowIso = new Date(nowMs).toISOString();
+    const riskActive = !!risk && new Date(risk.blocked_until).getTime() > nowMs;
     const isCrisis = riskActive && risk.level === "crisis";
     const isMatchingBlocked = riskActive;
+
+    const joinedRoomIds = (members ?? []).map((m) => m.room_id);
+    const leftMap = new Map((members ?? []).map((m) => [m.room_id, Boolean(m.left_at)]));
+
+    let activeRoomId: string | null = null;
+    let rooms: {
+      id: string;
+      status: "active" | "ended";
+      started_at: string;
+      ends_at: string;
+      partner_nickname: string;
+      partner_avatar: string;
+      left: boolean;
+    }[] = [];
+
+    if (joinedRoomIds.length > 0) {
+      // 期限切れのまま active で残っているルームは自動終了させる
+      await admin
+        .from("rooms")
+        .update({ status: "ended", end_reason: "timeout" })
+        .in("id", joinedRoomIds)
+        .eq("status", "active")
+        .lte("ends_at", nowIso);
+
+      const [{ data: roomRows }, { data: allMembers }] = await Promise.all([
+        admin
+          .from("rooms")
+          .select("id,status,started_at,ends_at")
+          .in("id", joinedRoomIds)
+          .order("started_at", { ascending: false }),
+        admin.from("room_members").select("room_id,user_id").in("room_id", joinedRoomIds),
+      ]);
+
+      const partnerIds = [
+        ...new Set((allMembers ?? []).filter((m) => m.user_id !== userId).map((m) => m.user_id)),
+      ];
+      const { data: partnerProfiles } = partnerIds.length
+        ? await admin.from("profiles").select("id,nickname,avatar").in("id", partnerIds)
+        : { data: [] as { id: string; nickname: string; avatar: string }[] };
+      const profileById = new Map((partnerProfiles ?? []).map((p) => [p.id, p]));
+      const partnerByRoom = new Map<string, { nickname: string; avatar: string }>();
+      (allMembers ?? []).forEach((m) => {
+        if (m.user_id !== userId) {
+          const p = profileById.get(m.user_id);
+          if (p) partnerByRoom.set(m.room_id, { nickname: p.nickname, avatar: p.avatar });
+        }
+      });
+
+      rooms = (roomRows ?? []).map((r) => {
+        const partner = partnerByRoom.get(r.id);
+        const left = leftMap.get(r.id) ?? false;
+        const isStillActive =
+          r.status === "active" && !left && new Date(r.ends_at).getTime() > nowMs;
+        if (isStillActive && !activeRoomId && !isCrisis && !isMatchingBlocked) {
+          activeRoomId = r.id;
+        }
+        return {
+          id: r.id,
+          status: (isStillActive ? "active" : "ended") as "active" | "ended",
+          started_at: r.started_at,
+          ends_at: r.ends_at,
+          partner_nickname: partner?.nickname ?? "お相手",
+          partner_avatar: partner?.avatar ?? "sun",
+          left,
+        };
+      });
+    }
 
     return NextResponse.json({
       profile: profile ?? null,
       checkin: checkin ?? null,
       summaryShared: Boolean(summary),
       summaryText: summary?.share_text ?? null,
-      joinedRoomIds: (members ?? []).map((m) => m.room_id),
+      joinedRoomIds,
+      activeRoomId,
+      rooms,
+      pendingReceivedCount: (pendingReceived ?? []).length,
       isCrisis,
       isMatchingBlocked,
     });

@@ -156,7 +156,7 @@ describe("evaluateFlowAccess - スキップ防止（前提条件未完了の遮�
     });
   });
 
-  it("要約未共有で /candidates や /requests に直接アクセスすると /summary へ誘導", () => {
+  it("要約未共有で /candidates に直接アクセスすると /summary へ誘導、/requests はチェックイン完了ならアクセス可能", () => {
     const state: FlowState = {
       ...defaultState,
       hasProfile: true,
@@ -176,14 +176,19 @@ describe("evaluateFlowAccess - スキップ防止（前提条件未完了の遮�
     });
 
     const resRequests = evaluateFlowAccess("/requests", state);
-    expect(resRequests).toEqual({
-      allowed: false,
-      redirectPath: "/summary",
-      notice: {
-        code: "summary_required",
-        message: COPY.flow.notices.summary_required,
-      },
-    });
+    expect(resRequests).toEqual({ allowed: true });
+  });
+
+  it("参加済みルーム (/rooms/[id]) は後から会話リセットや要約期限切れがあっても履歴閲覧のためアクセス可能", () => {
+    const state: FlowState = {
+      ...defaultState,
+      hasProfile: true,
+      hasCheckin: true,
+      hasMessages: false,
+      summaryShared: false,
+      joinedRoomIds: ["room-past-1"],
+    };
+    expect(evaluateFlowAccess("/rooms/room-past-1", state)).toEqual({ allowed: true });
   });
 
   it("未参加の通常ルームにアクセスすると /requests へ誘導", () => {
@@ -272,7 +277,7 @@ describe("evaluateFlowAccess - スキップ防止（前提条件未完了の遮�
     }
   });
 
-  it("相談発言未送信ユーザーが後のステップ（P5〜P7）に直接アクセスした場合、すべて /consult へ誘導", () => {
+  it("相談発言未送信ユーザーが未参加の後のステップ（P5・未参加P7）に直接アクセスした場合、/consult へ誘導", () => {
     const state: FlowState = {
       ...defaultState,
       hasProfile: true,
@@ -281,7 +286,6 @@ describe("evaluateFlowAccess - スキップ防止（前提条件未完了の遮�
     };
     const skipTargets = [
       "/candidates",
-      "/requests",
       "/rooms",
       "/rooms/room-xyz",
     ];
@@ -299,7 +303,7 @@ describe("evaluateFlowAccess - スキップ防止（前提条件未完了の遮�
     }
   });
 
-  it("要約未共有ユーザーがルーム（P7）に直接アクセスした場合、/summary へ誘導", () => {
+  it("要約未共有ユーザーが未参加ルーム（P7）に直接アクセスした場合、/summary へ誘導", () => {
     const state: FlowState = {
       ...defaultState,
       hasProfile: true,

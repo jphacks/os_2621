@@ -32,6 +32,7 @@ export type ReceivedRequest = {
   share_text: string;
   status: "pending" | "accepted" | "declined" | "expired";
   expires_at: string;
+  room_id?: string | null;
 };
 
 export type SentRequest = {

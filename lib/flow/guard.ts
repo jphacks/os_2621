@@ -179,8 +179,8 @@ export function evaluateFlowAccess(pathname: string, state: FlowState): GuardRes
     return { allowed: true };
   }
 
-  // P5: /candidates, P6: /requests
-  if (path === "/candidates" || path === "/requests") {
+  // P5: /candidates
+  if (path === "/candidates") {
     if (!state.hasProfile) {
       return {
         allowed: false,
@@ -224,6 +224,32 @@ export function evaluateFlowAccess(pathname: string, state: FlowState): GuardRes
     return { allowed: true };
   }
 
+  // P6: /requests
+  // ホーム画面から Step6（リクエスト画面・以前のチャット記録）へいつでもアクセスできるよう、プロフィールとチェックインが完了していれば許可する
+  if (path === "/requests") {
+    if (!state.hasProfile) {
+      return {
+        allowed: false,
+        redirectPath: "/start",
+        notice: {
+          code: "profile_required",
+          message: COPY.flow.notices.profile_required,
+        },
+      };
+    }
+    if (!state.hasCheckin) {
+      return {
+        allowed: false,
+        redirectPath: "/checkin",
+        notice: {
+          code: "checkin_required",
+          message: COPY.flow.notices.checkin_required,
+        },
+      };
+    }
+    return { allowed: true };
+  }
+
   // P7: /rooms, /rooms/[id]
   if (path === "/rooms" || path.startsWith("/rooms/")) {
     if (path === "/rooms/demo") {
@@ -252,6 +278,10 @@ export function evaluateFlowAccess(pathname: string, state: FlowState): GuardRes
         },
       };
     }
+    // すでに自分が参加したルームであれば、後から要約期限切れや会話クリアがあっても過去のチャット記録を閲覧・再開できる
+    if (roomId && state.joinedRoomIds.includes(roomId)) {
+      return { allowed: true };
+    }
     if (!state.hasMessages) {
       return {
         allowed: false,
@@ -272,17 +302,14 @@ export function evaluateFlowAccess(pathname: string, state: FlowState): GuardRes
         },
       };
     }
-    if (!roomId || !state.joinedRoomIds.includes(roomId)) {
-      return {
-        allowed: false,
-        redirectPath: "/requests",
-        notice: {
-          code: "room_invalid",
-          message: COPY.flow.notices.room_invalid,
-        },
-      };
-    }
-    return { allowed: true };
+    return {
+      allowed: false,
+      redirectPath: "/requests",
+      notice: {
+        code: "room_invalid",
+        message: COPY.flow.notices.room_invalid,
+      },
+    };
   }
 
   // その他のパスは許可

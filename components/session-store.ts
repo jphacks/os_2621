@@ -1,4 +1,5 @@
-// ブラウザ側の一時状態（sessionStorage）。相談の会話本文はDBに保存しない（SPEC §5.2）。
+// ブラウザ側の状態（localStorage ＋ sessionStorage フォールバック）。
+// 相談の会話本文はDBに保存せず（SPEC §5.2）、タブを閉じたり別タブを開いたりしてもブラウザ内で会話を引き継げるようにする。
 // SSR中は何もしない。
 
 import type { FlowNotice, FlowState } from "@/lib/flow/guard";
@@ -14,6 +15,7 @@ const KEYS = {
   flags: "hidamari.flags",
   summaryShared: "hidamari.summaryShared",
   joinedRoomIds: "hidamari.joinedRoomIds",
+  activeRoomId: "hidamari.activeRoomId",
   notice: "hidamari.notice",
 } as const;
 
@@ -22,22 +24,89 @@ export type SessionFlags = {
   matchingBlocked: boolean; // L2失敗などで止める（fail-closed）
 };
 
+function getPrimaryStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    if (window.localStorage) return window.localStorage;
+  } catch {
+    // プライベートブラウジング等で localStorage が無効な場合は sessionStorage へフォールバック
+  }
+  try {
+    if (window.sessionStorage) return window.sessionStorage;
+  } catch {
+    // noop
+  }
+  return null;
+}
+
+function getSecondaryStorage(): Storage | null {
+  if (typeof window === "undefined") return null;
+  try {
+    if (window.sessionStorage && window.sessionStorage !== getPrimaryStorage()) {
+      return window.sessionStorage;
+    }
+  } catch {
+    // noop
+  }
+  return null;
+}
+
 function read<T>(key: string, fallback: T): T {
   if (typeof window === "undefined") return fallback;
   try {
-    const raw = window.sessionStorage.getItem(key);
-    return raw ? (JSON.parse(raw) as T) : fallback;
+    const primary = getPrimaryStorage();
+    const rawPrimary = primary?.getItem(key);
+    if (rawPrimary !== null && rawPrimary !== undefined) {
+      return JSON.parse(rawPrimary) as T;
+    }
   } catch {
-    return fallback;
+    // 破損データ時はセカンダリまたは fallback へ
   }
+  try {
+    const secondary = getSecondaryStorage();
+    const rawSecondary = secondary?.getItem(key);
+    if (rawSecondary !== null && rawSecondary !== undefined) {
+      const parsed = JSON.parse(rawSecondary) as T;
+      // 既存タブの sessionStorage データを localStorage へマイグレーション
+      try {
+        getPrimaryStorage()?.setItem(key, rawSecondary);
+      } catch {
+        // noop
+      }
+      return parsed;
+    }
+  } catch {
+    // noop
+  }
+  return fallback;
 }
 
 function write(key: string, value: unknown) {
   if (typeof window === "undefined") return;
+  const serialized = JSON.stringify(value);
   try {
-    window.sessionStorage.setItem(key, JSON.stringify(value));
+    getPrimaryStorage()?.setItem(key, serialized);
   } catch {
     // 容量超過などは無視（状態が残らないだけ）
+  }
+  try {
+    getSecondaryStorage()?.setItem(key, serialized);
+  } catch {
+    // noop
+  }
+}
+
+function remove(key: string) {
+  if (typeof window === "undefined") return;
+  try {
+    getPrimaryStorage()?.removeItem(key);
+  } catch {
+    // noop
+  }
+  try {
+    getSecondaryStorage()?.removeItem(key);
+  } catch {
+    // noop
   }
 }
 
@@ -66,12 +135,22 @@ export const sessionStore = {
     }
   },
 
+  getActiveRoomId: () => read<string | null>(KEYS.activeRoomId, null),
+  setActiveRoomId(id: string | null) {
+    if (!id || typeof id !== "string") {
+      remove(KEYS.activeRoomId);
+      return;
+    }
+    write(KEYS.activeRoomId, id);
+    this.addJoinedRoomId(id);
+  },
+
   getNotice: () => read<FlowNotice | null>(KEYS.notice, null),
   setNotice(n: FlowNotice | null) {
     if (typeof window === "undefined") return;
     try {
       if (n === null) {
-        window.sessionStorage.removeItem(KEYS.notice);
+        remove(KEYS.notice);
       } else {
         write(KEYS.notice, n);
       }
@@ -89,20 +168,16 @@ export const sessionStore = {
   },
 
   clearConsult() {
-    if (typeof window === "undefined") return;
-    try {
-      window.sessionStorage.removeItem(KEYS.messages);
-      window.sessionStorage.removeItem(KEYS.flags);
-      window.sessionStorage.removeItem(KEYS.summaryShared);
-    } catch {
-      // noop
-    }
+    remove(KEYS.messages);
+    remove(KEYS.flags);
+    remove(KEYS.summaryShared);
   },
 
   clearAll() {
     if (typeof window === "undefined") return;
+    Object.values(KEYS).forEach((key) => remove(key));
     try {
-      window.sessionStorage.clear();
+      window.sessionStorage?.clear();
     } catch {
       // noop
     }
@@ -127,3 +202,4 @@ export const sessionStore = {
     };
   },
 };
+

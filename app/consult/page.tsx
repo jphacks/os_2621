@@ -249,8 +249,14 @@ export default function ConsultPage() {
             </span>
           </div>
 
-          {crisis && (
-            <Button variant="ghost" size="sm" onClick={restart} className="text-xs text-muted-foreground min-h-[32px]">
+          {(crisis || messages.length > 0) && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={restart}
+              disabled={busy}
+              className="text-xs text-muted-foreground min-h-[32px]"
+            >
               <RotateCcw className="mr-1 h-3 w-3" />
               {COPY.consult.newSession}
             </Button>
