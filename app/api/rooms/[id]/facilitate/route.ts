@@ -15,6 +15,9 @@ import {
   msSinceLastAi,
 } from "@/lib/rooms/service";
 
+// Vercel で、LLMの呼び出しが途中で打ち切られないように（秒）
+export const maxDuration = 60;
+
 const bodySchema = z.object({ event: z.enum(["time_warning", "closing", "silence"]) });
 const DEMO_FAST = process.env.NEXT_PUBLIC_DEMO_FAST_TIMER === "true";
 

@@ -8,6 +8,9 @@ import { rankCandidates } from "@/lib/matching/score";
 import { detectCrisisL1 } from "@/lib/safety/detectCrisis";
 import type { CandidateDto } from "@/types/api";
 
+// Vercel で、LLMの呼び出しが途中で打ち切られないように（秒）
+export const maxDuration = 60;
+
 const FALLBACK_COMMON = "似たテーマで悩んでいる方です";
 
 // 共通点の一文。双方が共有に同意した share_text だけを入力にする。失敗したら固定文

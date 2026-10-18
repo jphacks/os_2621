@@ -6,6 +6,9 @@ import { loadPrompt } from "@/lib/llm/prompts";
 import { detectCrisisL1, mergeRiskResults, type L2RiskResult } from "@/lib/safety/detectCrisis";
 import type { ChatEvent } from "@/types/api";
 
+// Vercel で、LLMの呼び出しが途中で打ち切られないように（秒）
+export const maxDuration = 60;
+
 const bodySchema = z.object({
   messages: z
     .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(2000) }))
