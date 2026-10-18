@@ -1,5 +1,5 @@
 // フロント（Cさん）が呼ぶAPIの入出力型。docs/api-contract-from-ui.md と同じ形。
-import type { Category, Stage } from "@/lib/matching/score";
+import type { AgeGroup, Category, Stage } from "@/lib/matching/score";
 
 export type ChatMessage = { role: "user" | "assistant"; content: string };
 export type Checkin = { mood: number; energy: number };
@@ -16,6 +16,7 @@ export type SummaryDraft = {
   tags: string[];
   energy_estimate: number;
   stage_estimate: Stage;
+  masked?: boolean;
 };
 
 export type CandidateDto = {
@@ -25,6 +26,8 @@ export type CandidateDto = {
   avatar: string;
   share_text: string;
   common_ground: string;
+  age_group?: AgeGroup;
+  is_same_age?: boolean;
 };
 
 export type RequestStatus = "pending" | "accepted" | "declined" | "expired";

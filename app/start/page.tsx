@@ -55,12 +55,19 @@ export default function StartPage() {
           if (signInError || !data.user) throw signInError ?? new Error("no user");
           userId = data.user.id;
         }
+        // すでに年代が登録されているユーザーが、別の年代を選んだときは、理由を伝えて止める（年代は変えられない）
+        const { data: existing } = await supabase.from("profiles").select("age_group").eq("id", userId).maybeSingle();
+        if (existing?.age_group && existing.age_group !== ageGroup) {
+          setError(COPY.start.errors.ageLocked);
+          setBusy(false);
+          return;
+        }
         const { error: upsertError } = await supabase
           .from("profiles")
           .upsert({ id: userId, nickname: name, avatar, age_group: ageGroup });
         if (upsertError) throw upsertError;
       }
-      sessionStore.setProfile({ nickname: name, avatar });
+      sessionStore.setProfile({ nickname: name, avatar, age_group: ageGroup });
       router.push("/checkin");
     } catch (e) {
       // 原因の調査用（エラーの種類とメッセージだけ。ニックネームなどの入力は出さない）
@@ -73,7 +80,7 @@ export default function StartPage() {
 
   return (
     <form onSubmit={onSubmit}>
-      <Card>
+      <Card className="shadow-hidamari">
         <CardHeader>
           <CardTitle>{COPY.start.title}</CardTitle>
           <CardDescription>{COPY.start.lead}</CardDescription>
@@ -107,8 +114,10 @@ export default function StartPage() {
               {AGE_GROUPS.map((g) => (
                 <label
                   key={g}
-                  className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border px-3 text-sm transition-colors ${
-                    ageGroup === g ? "border-primary bg-accent" : "hover:bg-accent/50"
+                  className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border px-3 text-sm transition-all ${
+                    ageGroup === g
+                      ? "border-primary bg-warmth-100/70 text-foreground font-medium shadow-hidamari-soft"
+                      : "hover:bg-accent/50"
                   }`}
                 >
                   <input
@@ -132,8 +141,10 @@ export default function StartPage() {
               {AVATARS.map((a) => (
                 <label
                   key={a.id}
-                  className={`flex min-h-[64px] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border p-2 text-xs transition-colors ${
-                    avatar === a.id ? "border-primary bg-accent" : "hover:bg-accent/50"
+                  className={`flex min-h-[64px] cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border p-2 text-xs transition-all ${
+                    avatar === a.id
+                      ? "border-primary bg-warmth-100/70 font-medium shadow-hidamari-soft"
+                      : "hover:bg-accent/50"
                   }`}
                 >
                   <input
@@ -154,7 +165,7 @@ export default function StartPage() {
           </fieldset>
         </CardContent>
         <CardFooter>
-          <Button type="submit" size="lg" disabled={busy}>
+          <Button type="submit" size="lg" disabled={busy} className="min-h-[44px]">
             {COPY.start.submit}
           </Button>
         </CardFooter>

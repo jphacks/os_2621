@@ -1,5 +1,8 @@
 import { NextResponse } from "next/server";
 import { z } from "zod";
+import { getFacilitatorConfig } from "@/lib/facilitator/config";
+import { decideIntervention } from "@/lib/facilitator/decide";
+import { detectCrisisL1 } from "@/lib/safety/detectCrisis";
 import {
   DEDUPE_WINDOW_MS,
   composeFacilitatorText,
@@ -12,9 +15,10 @@ import {
   msSinceLastAi,
 } from "@/lib/rooms/service";
 
-const bodySchema = z.object({ event: z.enum(["time_warning", "closing"]) });
+const bodySchema = z.object({ event: z.enum(["time_warning", "closing", "silence"]) });
+const DEMO_FAST = process.env.NEXT_PUBLIC_DEMO_FAST_TIMER === "true";
 
-// 時間の経過で司会を呼ぶ（クライアントのタイマーから）。2人とも送るので、重複は無視する
+// 時間の経過・沈黙で司会を呼ぶ（クライアントのタイマーから）。2人とも送るので、重複は無視する
 export async function POST(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: roomId } = await params;
 
@@ -43,6 +47,34 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       }
       const text = await composeFacilitatorText(admin, roomId, "time_warning");
       if (text) await insertMessage(admin, roomId, { sender_id: null, sender_type: "ai", body: text });
+      return NextResponse.json({ ok: true });
+    }
+
+    if (event === "silence") {
+      const cfg = getFacilitatorConfig(DEMO_FAST);
+      const { data: lastMsg } = await admin
+        .from("room_messages")
+        .select("created_at")
+        .eq("room_id", roomId)
+        .order("created_at", { ascending: false })
+        .limit(1);
+      const lastTime = lastMsg?.[0]?.created_at ? new Date(lastMsg[0].created_at).getTime() : startedAt;
+      const silenceMs = now - lastTime;
+      const sinceAi = await msSinceLastAi(admin, roomId);
+      const action = decideIntervention({
+        elapsedMs: now - startedAt,
+        timeWarningAlreadySent: true,
+        silenceMs,
+        msSinceLastIntervention: Number.isFinite(sinceAi) ? sinceAi : null,
+        config: cfg,
+      });
+      if (!action.shouldIntervene || action.trigger !== "silence") {
+        return NextResponse.json({ ok: true, skipped: "not_needed" });
+      }
+      const text = await composeFacilitatorText(admin, roomId, "silence");
+      if (text && detectCrisisL1(text).level !== "crisis") {
+        await insertMessage(admin, roomId, { sender_id: null, sender_type: "ai", body: text });
+      }
       return NextResponse.json({ ok: true });
     }
 

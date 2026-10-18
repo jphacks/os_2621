@@ -79,6 +79,7 @@ export async function GET() {
         const profile = byId.get(candidate.userId);
         const shareText = textById.get(candidate.id);
         if (!profile || !shareText) return null;
+        const candidateAge = ages.get(candidate.userId);
         return {
           summary_id: candidate.id,
           user_id: candidate.userId,
@@ -86,6 +87,8 @@ export async function GET() {
           avatar: profile.avatar,
           share_text: shareText,
           common_ground: await commonGround(mine.share_text, shareText),
+          age_group: candidateAge,
+          is_same_age: candidateAge === myAge,
         };
       })
     );

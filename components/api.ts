@@ -1,12 +1,15 @@
 // フロントから呼ぶAPIの入出力型と fetch 補助（Cさん担当）。
 // ここの型は SPEC.md §9 を元にした「想定」。Aさんの types/ が出来たら、そちらに差し替える。
 
+import type { AgeGroup } from "@/lib/matching/score";
+
 export type SummaryDraft = {
   share_text: string;
   category: string;
   tags: string[];
   energy_estimate: number;
   stage_estimate: string;
+  masked?: boolean;
 };
 
 export type Candidate = {
@@ -16,6 +19,8 @@ export type Candidate = {
   avatar: string;
   share_text: string;
   common_ground?: string;
+  age_group?: AgeGroup;
+  is_same_age?: boolean;
 };
 
 export type ReceivedRequest = {

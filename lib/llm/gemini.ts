@@ -13,6 +13,15 @@ export function getGeminiModel(tier: ModelTier): string {
   return fromEnv || (tier === "main" ? "gemini-3.8-flash" : "gemini-3.5-flash-lite");
 }
 
+// 混雑（503）・回数制限（429）・モデルが見つからない（404）のときに、順に試すモデル。
+// モデルごとに無料枠の回数が別なので、止まったときの逃げ道になる。
+export function getGeminiCandidates(tier: ModelTier): string[] {
+  const all = [getGeminiModel(tier), "gemini-3.5-flash-lite", "gemini-3.1-flash-lite"];
+  return [...new Set(all)];
+}
+
+const RETRYABLE = new Set([429, 503, 404]);
+
 function requestBody(systemPrompt: string, messages: Msg[], maxTokens: number, json: boolean) {
   return {
     systemInstruction: { parts: [{ text: systemPrompt }] },
@@ -44,18 +53,28 @@ export async function geminiGenerate(opts: {
   signal: AbortSignal;
   json?: boolean;
 }): Promise<string> {
-  const model = getGeminiModel(opts.tier);
-  const res = await fetch(`${BASE}/${model}:generateContent`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey() },
-    body: JSON.stringify(requestBody(opts.systemPrompt, opts.messages, opts.maxTokens, !!opts.json)),
-    signal: opts.signal,
-  });
-  if (!res.ok) throw new Error(`Gemini API error ${res.status}`);
-  const text = textOf(await res.json());
-  // 安全フィルターなどで空のとき。呼び出し側は失敗として扱う（fail-closed）
-  if (!text) throw new Error("Gemini API returned no text.");
-  return text;
+  let lastStatus = 0;
+  for (const model of getGeminiCandidates(opts.tier)) {
+    const res = await fetch(`${BASE}/${model}:generateContent`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey() },
+      body: JSON.stringify(requestBody(opts.systemPrompt, opts.messages, opts.maxTokens, !!opts.json)),
+      signal: opts.signal,
+    });
+    if (!res.ok) {
+      lastStatus = res.status;
+      if (RETRYABLE.has(res.status)) {
+        console.warn("[gemini] fallback", { model, status: res.status });
+        continue;
+      }
+      throw new Error(`Gemini API error ${res.status}`);
+    }
+    const text = textOf(await res.json());
+    // 安全フィルターなどで空のとき。呼び出し側は失敗として扱う（fail-closed）
+    if (!text) throw new Error("Gemini API returned no text.");
+    return text;
+  }
+  throw new Error(`Gemini API error ${lastStatus}`);
 }
 
 export async function* geminiStream(opts: {
@@ -65,37 +84,48 @@ export async function* geminiStream(opts: {
   maxTokens: number;
   signal: AbortSignal;
 }): AsyncGenerator<string, void, unknown> {
-  const model = getGeminiModel(opts.tier);
-  const res = await fetch(`${BASE}/${model}:streamGenerateContent?alt=sse`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey() },
-    body: JSON.stringify(requestBody(opts.systemPrompt, opts.messages, opts.maxTokens, false)),
-    signal: opts.signal,
-  });
-  if (!res.ok || !res.body) throw new Error(`Gemini API error ${res.status}`);
+  let lastStatus = 0;
+  for (const model of getGeminiCandidates(opts.tier)) {
+    const res = await fetch(`${BASE}/${model}:streamGenerateContent?alt=sse`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "x-goog-api-key": apiKey() },
+      body: JSON.stringify(requestBody(opts.systemPrompt, opts.messages, opts.maxTokens, false)),
+      signal: opts.signal,
+    });
+    if (!res.ok || !res.body) {
+      lastStatus = res.status;
+      if (RETRYABLE.has(res.status)) {
+        console.warn("[gemini] fallback", { model, status: res.status });
+        continue;
+      }
+      throw new Error(`Gemini API error ${res.status}`);
+    }
 
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  let any = false;
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    const lines = buffer.split("\n");
-    buffer = lines.pop() ?? "";
-    for (const line of lines) {
-      if (!line.startsWith("data:")) continue;
-      try {
-        const text = textOf(JSON.parse(line.slice(5).trim()));
-        if (text) {
-          any = true;
-          yield text;
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let any = false;
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      const lines = buffer.split(String.fromCharCode(10));
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.startsWith("data:")) continue;
+        try {
+          const text = textOf(JSON.parse(line.slice(5).trim()));
+          if (text) {
+            any = true;
+            yield text;
+          }
+        } catch {
+          // 壊れた行は無視
         }
-      } catch {
-        // 壊れた行は無視
       }
     }
+    if (!any) throw new Error("Gemini API returned no text.");
+    return;
   }
-  if (!any) throw new Error("Gemini API returned no text.");
+  throw new Error(`Gemini API error ${lastStatus}`);
 }

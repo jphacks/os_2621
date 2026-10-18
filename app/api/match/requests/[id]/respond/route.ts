@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAdmin, getUserId, jsonError } from "@/lib/api/common";
 import { loadAgeGroups, loadBlockedIds } from "@/lib/api/match";
 import { isRiskBlocked } from "@/lib/api/risk";
+import { isAgeCompatible } from "@/lib/matching/score";
 import { getFacilitatorConfig } from "@/lib/facilitator/config";
 import { composeFacilitatorText, insertMessage } from "@/lib/rooms/service";
 
@@ -42,10 +43,11 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
       return jsonError(409, "いまは、つなぐことができません。");
     }
 
-    // 年代が同じで、どちらも設定済みのときだけつなぐ（承諾の時点でも確認する）
+    // 年代が互換であり、どちらも設定済みのときだけつなぐ（承諾の時点でも確認する）
     const ages = await loadAgeGroups(admin, [request.from_user, request.to_user]);
     const fromAge = ages.get(request.from_user);
-    if (!fromAge || fromAge !== ages.get(request.to_user)) return jsonError(409, "いまは、つなぐことができません。");
+    const toAge = ages.get(request.to_user);
+    if (!fromAge || !toAge || !isAgeCompatible(fromAge, toAge)) return jsonError(409, "いまは、つなぐことができません。");
 
     // 先に pending → accepted にした1回だけがルームを作る
     const { data: claimed } = await admin

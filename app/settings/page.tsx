@@ -86,7 +86,7 @@ export default function SettingsPage() {
     try {
       await api("/api/me", { method: "DELETE" });
       if (process.env.NEXT_PUBLIC_SUPABASE_URL) await createClient().auth.signOut();
-      sessionStorage.clear();
+      sessionStore.clearAll();
       router.push("/");
     } catch {
       setDeleteMsg(COPY.settings.deleteFailed);
@@ -98,7 +98,7 @@ export default function SettingsPage() {
     <div className="space-y-5">
       <h1 className="text-lg font-semibold">{COPY.settings.title}</h1>
 
-      <Card>
+      <Card className="shadow-hidamari">
         <CardHeader>
           <CardTitle className="text-base">{COPY.settings.nicknameTitle}</CardTitle>
         </CardHeader>
@@ -116,14 +116,14 @@ export default function SettingsPage() {
                 {nickMsg}
               </p>
             )}
-            <Button type="submit" disabled={busy}>
+            <Button type="submit" disabled={busy} className="min-h-[44px]">
               {COPY.settings.nicknameSave}
             </Button>
           </form>
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="shadow-hidamari">
         <CardHeader>
           <CardTitle className="text-base">{COPY.settings.ageTitle}</CardTitle>
         </CardHeader>
@@ -143,8 +143,10 @@ export default function SettingsPage() {
                 {AGE_GROUPS.map((g) => (
                   <label
                     key={g}
-                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border px-3 ${
-                      ageDraft === g ? "border-primary bg-accent" : "hover:bg-accent/50"
+                    className={`flex min-h-[44px] cursor-pointer items-center gap-3 rounded-lg border px-3 transition-all ${
+                      ageDraft === g
+                        ? "border-primary bg-warmth-100/70 font-medium shadow-hidamari-soft"
+                        : "hover:bg-accent/50"
                     }`}
                   >
                     <input
@@ -158,7 +160,7 @@ export default function SettingsPage() {
                   </label>
                 ))}
               </div>
-              <Button onClick={() => void saveAge()} disabled={busy || !ageDraft}>
+              <Button onClick={() => void saveAge()} disabled={busy || !ageDraft} className="min-h-[44px]">
                 {COPY.settings.ageSave}
               </Button>
             </>
@@ -171,7 +173,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="shadow-hidamari">
         <CardHeader>
           <CardTitle className="text-base">{COPY.settings.hotlinesTitle}</CardTitle>
         </CardHeader>
@@ -181,7 +183,7 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      <Card>
+      <Card className="shadow-hidamari">
         <CardHeader>
           <CardTitle className="text-base">{COPY.settings.deleteTitle}</CardTitle>
         </CardHeader>
@@ -194,15 +196,15 @@ export default function SettingsPage() {
           )}
           {confirming ? (
             <div className="flex flex-wrap gap-3">
-              <Button variant="outline" onClick={() => void deleteAll()} disabled={busy}>
+              <Button variant="outline" onClick={() => void deleteAll()} disabled={busy} className="min-h-[44px]">
                 {COPY.settings.deleteConfirm}
               </Button>
-              <Button variant="ghost" onClick={() => setConfirming(false)} disabled={busy}>
+              <Button variant="ghost" onClick={() => setConfirming(false)} disabled={busy} className="min-h-[44px]">
                 {COPY.settings.deleteCancel}
               </Button>
             </div>
           ) : (
-            <Button variant="outline" onClick={() => setConfirming(true)}>
+            <Button variant="outline" onClick={() => setConfirming(true)} className="min-h-[44px]">
               {COPY.settings.deleteStart}
             </Button>
           )}

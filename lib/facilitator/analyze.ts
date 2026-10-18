@@ -1,5 +1,6 @@
 import "server-only";
 import { z } from "zod";
+import { setRiskBlock } from "@/lib/api/risk";
 import { generateJson } from "@/lib/llm/claude";
 import { loadPrompt } from "@/lib/llm/prompts";
 import { getFacilitatorConfig } from "@/lib/facilitator/config";
@@ -9,6 +10,7 @@ import {
   composeFacilitatorText,
   endRoom,
   insertMessage,
+  markLeft,
   msSinceLastAi,
   type Admin,
   type RoomRow,
@@ -65,7 +67,9 @@ export async function afterMessage(
       }).catch(() => null);
 
       if (risk?.level === "crisis") {
+        await setRiskBlock(admin, userId, "crisis").catch(() => {});
         await admin.from("room_messages").delete().eq("id", messageId);
+        await markLeft(admin, roomId, userId);
         await endRoom(admin, roomId, "safety", "ルームが終了しました");
         console.warn("[room] L2 crisis", { roomId, userId });
         return;
@@ -91,15 +95,17 @@ export async function afterMessage(
           schema: flowSchema,
         }).catch(() => null)) ?? undefined;
     }
-    if (!flow && !opts.piiMasked) return;
 
     const { data: roomData } = await admin.from("rooms").select("*").eq("id", roomId).single();
     const room = roomData as RoomRow | null;
     if (!room || room.status !== "active") return;
 
+    const elapsedMs = Date.now() - new Date(room.started_at).getTime();
+    if (!flow && !opts.piiMasked && elapsedMs < cfg.ROOM_LIMIT_MS) return;
+
     const sinceAi = await msSinceLastAi(admin, roomId);
     const action = decideIntervention({
-      elapsedMs: Date.now() - new Date(room.started_at).getTime(),
+      elapsedMs,
       timeWarningAlreadySent: true, // 25分の予告は /facilitate が担当する
       msSinceLastIntervention: Number.isFinite(sinceAi) ? sinceAi : null,
       flowAnalysis: flow,

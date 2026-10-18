@@ -14,24 +14,39 @@ export type Category =
 export type Stage = "struggling" | "coping" | "recovering";
 
 /**
- * ピアマッチング対象の年代区分（学生区分）
- * - junior_high: 中学生
- * - high_school: 高校生
- * - university: 大学生（専門・院生含む）
- * ※社会人は対象外。異なる年代区分同士はマッチングしない。
+ * ピアマッチング対象の年代区分
+ * - junior_high: 中学生（未成年保護: 中学生同士のみ）
+ * - high_school: 高校生（未成年保護: 高校生同士のみ）
+ * - university: 大学生（短期大学・専門学校・高専等含む）
+ * - graduate: 大学院生
+ * - working: 社会人
+ * - other: その他
+ * ※ 未成年と成人は絶対にマッチングしない。
  */
-export type AgeGroup = "junior_high" | "high_school" | "university";
+export type AgeGroup =
+  | "junior_high"
+  | "high_school"
+  | "university"
+  | "graduate"
+  | "working"
+  | "other";
 
 export const AGE_GROUPS: readonly AgeGroup[] = [
   "junior_high",
   "high_school",
   "university",
+  "graduate",
+  "working",
+  "other",
 ] as const;
 
 export const AGE_GROUP_LABELS: Record<AgeGroup, string> = {
   junior_high: "中学生",
   high_school: "高校生",
-  university: "大学生（専門・院生含む）",
+  university: "大学生（専門生含む）",
+  graduate: "大学院生",
+  working: "社会人",
+  other: "その他",
 };
 
 /**
@@ -42,6 +57,69 @@ export function isValidAgeGroup(value: unknown): value is AgeGroup {
     typeof value === "string" &&
     (AGE_GROUPS as readonly string[]).includes(value)
   );
+}
+
+/**
+ * 2つの年代区分がマッチング可能（互換性あり）かを判定する純粋関数
+ *
+ * 【安全原則・未成年保護】
+ * 1. どちらかが未設定（undefined/null）または無効値なら除外 (fail-closed)
+ * 2. 中学生 (junior_high) は中学生同士のみ
+ * 3. 高校生 (high_school) は高校生同士のみ
+ * 4. 未成年と成人（大学・大学院・社会人・その他）は絶対にマッチしない
+ *
+ * 【青年・成人層の近接年代間マッチング】
+ * - 大学生 (university) ⇄ 大学院生 (graduate)
+ * - 大学院生 (graduate) ⇄ 社会人 (working)
+ * - 社会人 (working) ⇄ その他 (other)
+ * - 同年代同士は常に互換あり
+ */
+export function isAgeCompatible(a?: unknown, b?: unknown): boolean {
+  if (!isValidAgeGroup(a) || !isValidAgeGroup(b)) {
+    return false;
+  }
+  if (a === b) {
+    return true;
+  }
+
+  // 未成年保護: 中学生・高校生は同年代以外一切不可（中学生×高校生も不可）
+  if (a === "junior_high" || b === "junior_high") {
+    return false;
+  }
+  if (a === "high_school" || b === "high_school") {
+    return false;
+  }
+
+  // 青年・成人層の近接年代ペア（双方向）
+  const compatiblePairs: ReadonlyArray<readonly [AgeGroup, AgeGroup]> = [
+    ["university", "graduate"],
+    ["graduate", "university"],
+    ["graduate", "working"],
+    ["working", "graduate"],
+    ["working", "other"],
+    ["other", "working"],
+  ];
+
+  return compatiblePairs.some(([x, y]) => a === x && b === y);
+}
+
+/**
+ * 年代の組み合わせによる親和性スコアボーナス係数を計算する純粋関数 (0〜1.0)
+ * - 同年代 (a === b): 1.0 (最優先)
+ * - 近接年代 (isAgeCompatible): 0.85
+ * - それ以外 / 未設定: 0.0
+ */
+export function calculateAgeBonus(ageA?: unknown, ageB?: unknown): number {
+  if (!isValidAgeGroup(ageA) || !isValidAgeGroup(ageB)) {
+    return 0.0;
+  }
+  if (ageA === ageB) {
+    return 1.0;
+  }
+  if (isAgeCompatible(ageA, ageB)) {
+    return 0.85;
+  }
+  return 0.0;
 }
 
 export interface MatchSummary {
@@ -134,17 +212,32 @@ export function calculateStageBonus(stageA: Stage, stageB: Stage): number {
 
 /**
  * 2つの要約データ間のマッチングスコアを計算する純粋関数 (SPEC.md §6.2)
- * score = 0.5 * (categoryが一致 ? 1 : 0)
- *       + 0.3 * Jaccard(tagsA, tagsB)
- *       + 0.2 * stageBonus
+ * baseScore = 0.5 * (categoryが一致 ? 1 : 0)
+ *           + 0.3 * Jaccard(tagsA, tagsB)
+ *           + 0.2 * stageBonus
+ *
+ * 同年代を最優先しつつ、近接年代（大学×大学院等）でもボーナス係数（0.85）を乗じてスコアを算出。
+ * 年代未設定時は baseScore そのまま（後方互換）。
  */
 export function calculateMatchScore(a: MatchSummary, b: MatchSummary): number {
   const categoryScore = a.category === b.category ? 1 : 0;
   const jaccardScore = calculateJaccard(a.tags, b.tags);
   const stageBonus = calculateStageBonus(a.stage, b.stage);
 
-  const rawScore = 0.5 * categoryScore + 0.3 * jaccardScore + 0.2 * stageBonus;
-  return Number(rawScore.toFixed(6));
+  const baseScore = 0.5 * categoryScore + 0.3 * jaccardScore + 0.2 * stageBonus;
+
+  let ageFactor = 1.0;
+  if (a.ageGroup && b.ageGroup) {
+    if (a.ageGroup === b.ageGroup) {
+      ageFactor = 1.0;
+    } else if (isAgeCompatible(a.ageGroup, b.ageGroup)) {
+      ageFactor = 0.85;
+    } else {
+      ageFactor = 0.0;
+    }
+  }
+
+  return Number((baseScore * ageFactor).toFixed(6));
 }
 
 /**
@@ -155,9 +248,9 @@ export function calculateMatchScore(a: MatchSummary, b: MatchSummary): number {
  * 2. riskLevel !== "crisis"（本人および候補の双方が危機状態ではない）
  * 3. 自分自身ではない・ブロック関係にない・すでにリクエスト中やルーム進行中の相手ではない
  * 4. 【共倒れ防止】両者のエネルギーがどちらも 2 以下の場合は除外（false）
- * 5. 【同年代マッチング（未成年保護・世代間ギャップ防止）】
- *    ピアマッチング対象の学生区分（junior_high / high_school / university）であり、
- *    かつ同じ年代区分同士のみ許可する（異なる年代や対象外区分は除外）。
+ * 5. 【年代別マッチング（未成年保護・世代間ギャップ防止）】
+ *    ageGroup が指定されている場合は有効な年代区分かつ互換性があること（fail-closed）。
+ *    未成年（中学生・高校生）は完全一致のみ、成人層は同年代または近接年代のみ許可。
  */
 export function isEligibleCandidate(
   me: MatchSummary,
@@ -202,12 +295,9 @@ export function isEligibleCandidate(
     return false;
   }
 
-  // 5. 【同年代マッチング】ageGroup が指定されている場合は有効な学生区分かつ完全一致を必須とする（fail-closed）
+  // 5. 【年代別マッチング】ageGroup が指定されている場合は互換性チェック（fail-closed）
   if (me.ageGroup !== undefined || candidate.ageGroup !== undefined) {
-    if (!isValidAgeGroup(me.ageGroup) || !isValidAgeGroup(candidate.ageGroup)) {
-      return false;
-    }
-    if (me.ageGroup !== candidate.ageGroup) {
+    if (!isAgeCompatible(me.ageGroup, candidate.ageGroup)) {
       return false;
     }
   }

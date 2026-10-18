@@ -102,6 +102,7 @@ describe("lib/safety/piiMask - maskPII", () => {
       { label: "カカオ交換の誘い", text: "カカオ交換しよう" },
       { label: "DiscordのID提示", text: "DiscordのIDは gamer_1234 です" },
       { label: "単独のID表記", text: "検索用 ID: secret_peer_01 です" },
+      { label: "単独の全角ＩＤ表記", text: "検索用 ＩＤ：secret_peer_02 です" },
     ];
 
     it.each(snsExchangeSamples)(

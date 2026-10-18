@@ -6,7 +6,8 @@ import type { AdminClient } from "@/lib/api/common";
 // チェックインでは解除しない（解除できると、危機のあとにやり直して迂回できてしまうため）。
 
 const CRISIS_BLOCK_MS = 24 * 60 * 60 * 1000;
-const UNKNOWN_BLOCK_MS = 30 * 60 * 1000;
+// 判定の失敗（通信の一時的な不調など）は、短い時間だけ止める。危機（crisis）とは分けて扱う
+const UNKNOWN_BLOCK_MS = 5 * 60 * 1000;
 
 export async function setRiskBlock(admin: AdminClient, userId: string, level: "crisis" | "unknown") {
   const until = new Date(Date.now() + (level === "crisis" ? CRISIS_BLOCK_MS : UNKNOWN_BLOCK_MS)).toISOString();

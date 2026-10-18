@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { api, type RequestsResponse } from "@/components/api";
 import { COPY, avatarEmoji } from "@/lib/copy";
+import { sessionStore } from "@/components/session-store";
 import { createClient } from "@/lib/supabase/client";
 
 const POLL_MS = 8000;
@@ -19,7 +20,13 @@ export default function RequestsPage() {
 
   const refresh = useCallback(async () => {
     try {
-      setData(await api<RequestsResponse>("/api/match/requests"));
+      const res = await api<RequestsResponse>("/api/match/requests");
+      setData(res);
+      res.sent.forEach((r) => {
+        if (r.status === "accepted" && r.room_id) {
+          sessionStore.addJoinedRoomId(r.room_id);
+        }
+      });
     } catch {
       setError(COPY.generalError);
     }
@@ -49,8 +56,12 @@ export default function RequestsPage() {
     setError(null);
     try {
       const r = await api<{ room_id?: string }>(`/api/match/requests/${id}/respond`, { body: { accept } });
-      if (accept && r.room_id) router.push(`/rooms/${r.room_id}`);
-      else await refresh();
+      if (accept && r.room_id) {
+        sessionStore.addJoinedRoomId(r.room_id);
+        router.push(`/rooms/${r.room_id}`);
+      } else {
+        await refresh();
+      }
     } catch {
       setError(COPY.requests.failed);
     }
@@ -84,7 +95,7 @@ export default function RequestsPage() {
         </h2>
         {received.length === 0 && <p className="text-sm text-muted-foreground">{COPY.requests.noneReceived}</p>}
         {received.map((r) => (
-          <Card key={r.id}>
+          <Card key={r.id} className="shadow-hidamari">
             <CardContent className="space-y-3 pt-6">
               <div className="flex items-center gap-3">
                 <span className="text-2xl" aria-hidden="true">
@@ -94,8 +105,8 @@ export default function RequestsPage() {
               </div>
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{r.share_text}</p>
               <div className="flex flex-wrap gap-3">
-                <Button onClick={() => void respond(r.id, true)}>{COPY.requests.accept}</Button>
-                <Button variant="outline" onClick={() => void respond(r.id, false)}>
+                <Button onClick={() => void respond(r.id, true)} className="min-h-[44px]">{COPY.requests.accept}</Button>
+                <Button variant="outline" onClick={() => void respond(r.id, false)} className="min-h-[44px]">
                   {COPY.requests.decline}
                 </Button>
               </div>
@@ -110,7 +121,7 @@ export default function RequestsPage() {
         </h2>
         {sent.length === 0 && <p className="text-sm text-muted-foreground">{COPY.requests.noneSent}</p>}
         {sent.map((r) => (
-          <Card key={r.id}>
+          <Card key={r.id} className="shadow-hidamari">
             <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
               <div className="flex items-center gap-3">
                 <span className="text-2xl" aria-hidden="true">
@@ -122,7 +133,7 @@ export default function RequestsPage() {
                 </div>
               </div>
               {r.status === "accepted" && r.room_id && (
-                <Button asChild>
+                <Button asChild className="min-h-[44px]">
                   <Link href={`/rooms/${r.room_id}`}>{COPY.requests.enter}</Link>
                 </Button>
               )}

@@ -8,6 +8,7 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Disclaimer } from "@/components/disclaimer";
+import { PrivacyShieldBadge } from "@/components/privacy-shield-badge";
 import { api, ApiError, type SummaryDraft } from "@/components/api";
 import { sessionStore } from "@/components/session-store";
 import { COPY } from "@/lib/copy";
@@ -21,6 +22,7 @@ export default function SummaryPage() {
   const [draft, setDraft] = useState<SummaryDraft | null>(null);
   const [tagsText, setTagsText] = useState("");
   const [saving, setSaving] = useState(false);
+  const [maskedNotice, setMaskedNotice] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -42,6 +44,7 @@ export default function SummaryPage() {
       });
       setDraft(d);
       setTagsText(d.tags.join("、"));
+      setMaskedNotice(Boolean(d.masked));
       setState("ready");
     } catch {
       setState("failed");
@@ -62,9 +65,14 @@ export default function SummaryPage() {
       .filter(Boolean)
       .slice(0, 6);
     try {
-      await api("/api/summaries", {
+      const res = await api<{ id: string; masked?: boolean }>("/api/summaries", {
         body: { ...draft, share_text: draft.share_text.trim(), tags, checkin: sessionStore.getCheckin() },
       });
+      sessionStore.setSummaryShared(true);
+      if (res.masked) {
+        setMaskedNotice(true);
+        await new Promise((r) => setTimeout(r, 1200));
+      }
       router.push("/candidates");
     } catch (e) {
       // 403 はサーバー側で「このセッションは共有できない」と判断されたとき
@@ -111,7 +119,8 @@ export default function SummaryPage() {
   return (
     <div className="space-y-4">
       <Disclaimer />
-      <Card>
+      <PrivacyShieldBadge />
+      <Card className="shadow-hidamari">
         <CardHeader>
           <CardTitle>{COPY.summary.title}</CardTitle>
           <CardDescription>{COPY.summary.lead}</CardDescription>
@@ -157,6 +166,11 @@ export default function SummaryPage() {
           </div>
 
           <p className="text-xs leading-relaxed text-muted-foreground">{COPY.summary.shareHint}</p>
+          {maskedNotice && (
+            <p role="status" className="text-xs text-muted-foreground">
+              {COPY.room.masked}
+            </p>
+          )}
           {error && (
             <p role="alert" className="text-sm text-muted-foreground">
               {error}

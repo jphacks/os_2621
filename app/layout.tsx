@@ -1,6 +1,9 @@
 import type { Metadata } from "next";
 import "./globals.css";
 import { Header } from "@/components/header";
+import { FlowGuard } from "@/components/flow-guard";
+import { FlowNoticeBanner } from "@/components/flow-notice-banner";
+import { FlowStepIndicator } from "@/components/flow-step-indicator";
 
 export const metadata: Metadata = {
   title: "ひだまり — AIと対話し、同じ悩みを持つ仲間と安全につながる場所",
@@ -15,10 +18,12 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="ja">
-      <body className="min-h-screen flex flex-col">
+      <body className="min-h-screen flex flex-col overflow-x-hidden">
         <Header />
         <main className="mx-auto w-full max-w-3xl flex-1 px-4 py-6">
-          {children}
+          <FlowNoticeBanner />
+          <FlowStepIndicator />
+          <FlowGuard>{children}</FlowGuard>
         </main>
       </body>
     </html>

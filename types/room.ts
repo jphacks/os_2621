@@ -4,7 +4,7 @@ export type MessageResponse =
   | { type: "ok"; masked: boolean }
   | { type: "crisis" }; // 本人にだけ返す。相手には何も配信しない
 
-export type FacilitateEvent = "time_warning" | "closing";
+export type FacilitateEvent = "time_warning" | "closing" | "silence";
 
 export type ReportReason = "aggressive" | "pii" | "uncomfortable" | "other";
 

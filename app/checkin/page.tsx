@@ -39,7 +39,7 @@ export default function CheckinPage() {
 
   return (
     <form onSubmit={onSubmit}>
-      <Card>
+      <Card className="shadow-hidamari">
         <CardHeader>
           <CardTitle>{COPY.checkin.title}</CardTitle>
           <CardDescription>{COPY.checkin.lead}</CardDescription>
@@ -54,7 +54,7 @@ export default function CheckinPage() {
           )}
         </CardContent>
         <CardFooter>
-          <Button type="submit" size="lg" disabled={busy}>
+          <Button type="submit" size="lg" disabled={busy} className="min-h-[44px]">
             {COPY.checkin.submit}
           </Button>
         </CardFooter>
