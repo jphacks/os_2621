@@ -54,9 +54,7 @@
   - Realtime (メッセージングおよびWebRTCシグナリング)
 
 #### AI / LLM
-- **マルチLLMフォールバックアーキテクチャ**:
-  - **Anthropic Claude 3.5 Sonnet / 3.5 Haiku**: 高度な傾聴・感情要約・高精度危機判定
-  - **Google Gemini 2.5 Flash / Flash Lite**: 無料枠対応・高速ストリーミング・LLM Provider抽象レイヤーによる柔軟な切り替え
+- **Google Gemini 3.5: 高度な傾聴・感情要約・高精度危機判定　無料枠対応・高速ストリーミング・LLM Provider抽象レイヤーによる柔軟な切り替え
 
 ---
 
