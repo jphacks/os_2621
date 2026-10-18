@@ -6,6 +6,9 @@ import { maskPII } from "@/lib/safety/piiMask";
 import { endRoom, getAdmin, getUserId, insertMessage, jsonError, loadRoomAsMember, markLeft } from "@/lib/rooms/service";
 import type { MessageResponse } from "@/types/room";
 
+// Vercel で、LLMの呼び出しが途中で打ち切られないように（秒）
+export const maxDuration = 60;
+
 const bodySchema = z.object({ body: z.string().trim().min(1).max(500) });
 
 // メッセージ送信: マスク → L1の危機判定 → 保存 → （配信後に非同期で）L2と司会

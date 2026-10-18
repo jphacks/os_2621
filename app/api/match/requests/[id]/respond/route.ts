@@ -7,6 +7,9 @@ import { isAgeCompatible } from "@/lib/matching/score";
 import { getFacilitatorConfig } from "@/lib/facilitator/config";
 import { composeFacilitatorText, insertMessage } from "@/lib/rooms/service";
 
+// Vercel で、LLMの呼び出しが途中で打ち切られないように（秒）
+export const maxDuration = 60;
+
 const bodySchema = z.object({ accept: z.boolean() });
 const DEMO_FAST = process.env.NEXT_PUBLIC_DEMO_FAST_TIMER === "true";
 
