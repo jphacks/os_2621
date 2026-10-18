@@ -97,7 +97,7 @@ export async function composeFacilitatorText(
 ): Promise<string | null> {
   try {
     const [{ data: members }, { data: recent }] = await Promise.all([
-      admin.from("room_members").select("summary_id").eq("room_id", roomId),
+      admin.from("room_members").select("user_id,summary_id").eq("room_id", roomId),
       admin
         .from("room_messages")
         .select("sender_type,body")
@@ -106,10 +106,15 @@ export async function composeFacilitatorText(
         .limit(10),
     ]);
     const summaryIds = (members ?? []).map((m) => m.summary_id).filter(Boolean);
-    // 2人が共有に同意した要約（share_text）だけを使う
-    const { data: summaries } = summaryIds.length
-      ? await admin.from("summaries").select("share_text").in("id", summaryIds)
-      : { data: [] as { share_text: string }[] };
+    const missingUserIds = (members ?? []).filter((m) => !m.summary_id).map((m) => m.user_id);
+    // 2人が共有に同意した要約（share_text）だけを使う（summary_id が欠けている場合は user_id の共有中要約を補完）
+    const [{ data: byId }, { data: byUser }] = await Promise.all([
+      summaryIds.length ? admin.from("summaries").select("share_text").in("id", summaryIds) : { data: [] as { share_text: string }[] },
+      missingUserIds.length
+        ? admin.from("summaries").select("share_text").in("user_id", missingUserIds).eq("share_consent", true)
+        : { data: [] as { share_text: string }[] },
+    ]);
+    const summaries = [...(byId ?? []), ...(byUser ?? [])];
 
     const system = await loadPrompt("facilitator", {
       summaries: (summaries ?? []).map((s, i) => `${i + 1}. ${s.share_text}`).join("\n"),

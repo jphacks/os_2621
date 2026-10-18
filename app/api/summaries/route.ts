@@ -12,6 +12,12 @@ const bodySchema = z.object({
   tags: z.array(z.string().trim().min(1).max(20)).max(6),
   energy_estimate: z.number().int().min(1).max(5),
   stage_estimate: z.enum(["struggling", "coping", "recovering"]),
+  checkin: z
+    .object({
+      mood: z.number().int().min(1).max(5).optional(),
+      energy: z.number().int().min(1).max(5).optional(),
+    })
+    .nullish(),
   age_group: z.string().optional(),
 });
 
@@ -44,26 +50,34 @@ export async function POST(req: Request) {
     }
     const riskLevel = checks.some((c) => c.level === "caution") ? "caution" : "none";
 
-    // energy = (直近のチェックインの energy + AIの推定) / 2 を四捨五入（なければ3）
+    // energy = (直近のチェックインまたはP4再確認の energy + AIの推定) / 2 を四捨五入（気分が高い場合の補正つき）
     const { data: checkin } = await admin
       .from("checkins")
-      .select("energy")
+      .select("mood, energy")
       .eq("user_id", userId)
       .order("created_at", { ascending: false })
       .limit(1)
       .maybeSingle();
-    const energy = combineEnergy(checkin?.energy ?? 3, body.energy_estimate);
+    const selfEnergy = body.checkin?.energy ?? checkin?.energy ?? 3;
+    const selfMood = body.checkin?.mood ?? checkin?.mood;
+    const energy = combineEnergy(selfEnergy, body.energy_estimate, selfMood);
 
     // 年代が渡されていて、未設定の場合は profiles に保存する
     if (isValidAgeGroup(body.age_group)) {
       const { data: profile } = await admin.from("profiles").select("age_group").eq("id", userId).maybeSingle();
       if (profile && !profile.age_group) {
-        await admin.from("profiles").update({ age_group: body.age_group }).eq("id", userId);
+        const { error: ageErr } = await admin
+          .from("profiles")
+          .update({ age_group: body.age_group })
+          .eq("id", userId);
+        if (ageErr && body.age_group === "graduate") {
+          await admin.from("profiles").update({ age_group: "university" }).eq("id", userId);
+        }
       }
     }
 
-    // 共有している要約は最新の1件だけにする
-    await admin.from("summaries").delete().eq("user_id", userId);
+    // 新しい要約を先に挿入し、既存のリクエストやルームメンバーの参照を付け替えてから古い要約を削除する
+    // （DELETE を先に行うと ON DELETE SET NULL により送信済みリクエストの share_text が消えてしまうため）
     const { data, error } = await admin
       .from("summaries")
       .insert({
@@ -80,6 +94,13 @@ export async function POST(req: Request) {
       .select("id")
       .single();
     if (error) throw error;
+
+    await Promise.all([
+      admin.from("match_requests").update({ from_summary: data.id }).eq("from_user", userId).eq("status", "pending"),
+      admin.from("match_requests").update({ to_summary: data.id }).eq("to_user", userId).eq("status", "pending"),
+      admin.from("room_members").update({ summary_id: data.id }).eq("user_id", userId),
+    ]);
+    await admin.from("summaries").delete().eq("user_id", userId).neq("id", data.id);
 
     const masked = text.masked || tagResults.some((t) => t.masked);
     return NextResponse.json({ id: data.id, masked });

@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { getAdmin, getUserId, jsonError } from "@/lib/api/common";
-import { isRiskBlocked, setRiskBlock } from "@/lib/api/risk";
+import { clearUnknownRiskBlock, isRiskBlocked, setRiskBlock } from "@/lib/api/risk";
 import { generateJson, streamText } from "@/lib/llm/claude";
 import { loadPrompt } from "@/lib/llm/prompts";
 import { detectCrisisL1, mergeRiskResults, type L2RiskResult } from "@/lib/safety/detectCrisis";
@@ -24,14 +24,10 @@ const AGE_GROUP_LABEL_MAP: Record<string, string> = {
   high_school: "高校生",
   university: "大学生",
   graduate: "大学院生",
-  working: "社会人",
-  other: "その他",
   中学生: "中学生",
   高校生: "高校生",
   大学生: "大学生",
   大学院生: "大学院生",
-  社会人: "社会人",
-  その他: "その他",
 };
 
 function resolveAgeGroupLabel(raw?: string | null): string {
@@ -83,7 +79,11 @@ export async function POST(req: Request) {
   } catch {
     // DB未接続時や取得失敗時はリクエストボディを参照
   }
-  const ageGroupLabel = resolveAgeGroupLabel(profileAgeGroup ?? parsed.data.age_group);
+  const effectiveAgeGroup =
+    profileAgeGroup === "university" && parsed.data.age_group === "graduate"
+      ? "graduate"
+      : (profileAgeGroup ?? parsed.data.age_group);
+  const ageGroupLabel = resolveAgeGroupLabel(effectiveAgeGroup);
 
   // L1判定
   const l1 = detectCrisisL1(latest);
@@ -143,8 +143,6 @@ export async function POST(req: Request) {
       headers: { "Content-Type": "application/x-ndjson; charset=utf-8", "Cache-Control": "no-store" },
     });
   }
-
-  const alreadyBlocked = await isRiskBlocked(admin, userId);
 
   // 通常フロー: L2 は応答の生成と並列で走らせる。失敗・タイムアウト（5秒）は unknown（fail-closed）
   const l2Promise: Promise<L2RiskResult> = (async () => {
@@ -207,10 +205,16 @@ export async function POST(req: Request) {
         send({ type: "crisis" });
         send({ type: "done", matchingBlocked: true });
       } else {
-        if (l2.level === "unknown") await setRiskBlock(admin, userId, "unknown").catch(() => {});
-        const blocked = merged.blocked || alreadyBlocked;
+        if (l2.level === "unknown") {
+          await setRiskBlock(admin, userId, "unknown").catch(() => {});
+        } else if (!messages.some((m) => m.role === "user" && detectCrisisL1(m.content).level === "crisis")) {
+          // 今回の会話が L1・L2 ともに安全と確認できた場合は、過去の一時的な通信不調（unknown）のみ解除する（crisis は維持）
+          await clearUnknownRiskBlock(admin, userId).catch(() => {});
+        }
+        const stillBlocked = await isRiskBlocked(admin, userId);
+        const blocked = merged.blocked || stillBlocked;
         if (blocked) {
-          console.warn("[chat] matching blocked", { userId, previousRecord: alreadyBlocked, l2: l2.level });
+          console.warn("[chat] matching blocked", { userId, previousRecord: stillBlocked, l2: l2.level });
         }
         send({ type: "done", matchingBlocked: blocked });
       }

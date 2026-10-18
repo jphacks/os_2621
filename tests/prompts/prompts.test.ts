@@ -81,8 +81,8 @@ describe("Prompts suite - Phase 5 evaluation", () => {
       expect(prompt).toContain("高校生:");
       expect(prompt).toContain("大学生:");
       expect(prompt).toContain("大学院生:");
-      expect(prompt).toContain("社会人:");
-      expect(prompt).toContain("その他:");
+      expect(prompt).not.toContain("社会人:");
+      expect(prompt).not.toContain("その他:");
     });
 
     it("restricts responses to 1-2 short receptive sentences without question bombardments when energy is low", async () => {
@@ -245,14 +245,14 @@ describe("Prompts suite - Phase 5 evaluation", () => {
       expect(prompt).toContain("1〜2文程度の短く負担のない返答");
     });
 
-    it("Scenario D: Working adult with workplace fatigue and moderate energy (3)", async () => {
+    it("Scenario D: High school student with club/relationship worries and moderate energy (3)", async () => {
       const prompt = await loadPrompt("consult", {
-        age_group: "社会人",
+        age_group: "高校生",
         mood: 2,
         energy: 3,
       });
 
-      expect(prompt).toContain("社会人: 仕事の責任や職場関係の疲労感に敬意を払い、礼儀正しく穏やかな敬体で対話します。");
+      expect(prompt).toContain("高校生: 子ども扱いせず、友人関係・部活・進路などの悩みに真剣に耳を傾け、親身で対等な視点で対話します。");
       expect(prompt).toContain("エネルギー（3）と気分（2）への配慮");
       expect(prompt).toContain("エネルギーが3〜5のとき");
     });
@@ -373,8 +373,8 @@ describe("Prompts suite - Phase 5 evaluation", () => {
       expect(prompt).toContain("高校生:");
       expect(prompt).toContain("大学生:");
       expect(prompt).toContain("大学院生:");
-      expect(prompt).toContain("社会人:");
-      expect(prompt).toContain("その他:");
+      expect(prompt).not.toContain("社会人:");
+      expect(prompt).not.toContain("その他:");
     });
 
     it("minimizes questions and strictly bans self-responsibility, toxic positivity, and preaching", async () => {

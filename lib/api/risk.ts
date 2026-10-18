@@ -17,6 +17,14 @@ export async function setRiskBlock(admin: AdminClient, userId: string, level: "c
   await admin.from("session_risk").upsert({ user_id: userId, level, blocked_until: until, updated_at: new Date().toISOString() });
 }
 
+/**
+ * 一時的な通信不調等による unknown ブロックのみを解除する（新しい相談で L1・L2 ともに安全と確認できたとき用）。
+ * ※ crisis によるブロック（24時間）は絶対に解除しない。
+ */
+export async function clearUnknownRiskBlock(admin: AdminClient, userId: string) {
+  await admin.from("session_risk").delete().eq("user_id", userId).eq("level", "unknown");
+}
+
 /** 今、マッチングに進めない状態か。確認に失敗したときも「止める」側に倒す（fail-closed） */
 export async function isRiskBlocked(admin: AdminClient, userId: string): Promise<boolean> {
   const { data, error } = await admin.from("session_risk").select("blocked_until").eq("user_id", userId).maybeSingle();

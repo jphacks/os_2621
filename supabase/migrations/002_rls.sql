@@ -1,4 +1,4 @@
--- ひだまり: Row Level Security（SPEC.md §8.1）
+-- ChatTomo: Row Level Security（SPEC.md §8.1）
 -- 方針: クライアント（anon/authenticated）に許すのは「自分のデータを読む」「プロフィールを書く」だけ。
 -- それ以外の書き込みは、すべて API（service role）を通す。service role は RLS を無視する。
 

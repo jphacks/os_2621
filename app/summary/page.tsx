@@ -66,7 +66,13 @@ export default function SummaryPage() {
       .slice(0, 6);
     try {
       const res = await api<{ id: string; masked?: boolean }>("/api/summaries", {
-        body: { ...draft, share_text: draft.share_text.trim(), tags, checkin: sessionStore.getCheckin() },
+        body: {
+          ...draft,
+          share_text: draft.share_text.trim(),
+          tags,
+          checkin: sessionStore.getCheckin(),
+          age_group: sessionStore.getProfile()?.age_group,
+        },
       });
       sessionStore.setSummaryShared(true);
       if (res.masked) {
