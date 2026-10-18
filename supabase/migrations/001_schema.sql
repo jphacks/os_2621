@@ -1,4 +1,4 @@
--- ひだまり: スキーマ（SPEC.md §8）
+-- ChatTomo: スキーマ（SPEC.md §8）
 -- 実行順: 001_schema → 002_rls → 003_seed
 
 create table public.profiles (

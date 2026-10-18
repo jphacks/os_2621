@@ -29,13 +29,20 @@ export default function SettingsPage() {
   const [ageMsg, setAgeMsg] = useState<string | null>(null);
 
   useEffect(() => {
-    setNickname(sessionStore.getProfile()?.nickname ?? "");
+    const localProfile = sessionStore.getProfile();
+    setNickname(localProfile?.nickname ?? "");
     if (!process.env.NEXT_PUBLIC_SUPABASE_URL) return;
     const supabase = createClient();
     void supabase.auth.getUser().then(async ({ data }) => {
       if (!data.user) return;
       const { data: row } = await supabase.from("profiles").select("age_group").eq("id", data.user.id).maybeSingle();
-      if (row?.age_group) setAge(row.age_group as AgeGroup);
+      if (row?.age_group) {
+        const displayAge =
+          row.age_group === "university" && localProfile?.age_group === "graduate"
+            ? "graduate"
+            : (row.age_group as AgeGroup);
+        setAge(displayAge);
+      }
     });
   }, []);
 
@@ -48,7 +55,21 @@ export default function SettingsPage() {
       const { data } = await supabase.auth.getUser();
       if (!data.user) throw new Error("no user");
       const { error } = await supabase.from("profiles").update({ age_group: ageDraft }).eq("id", data.user.id);
-      if (error) throw error;
+      if (error) {
+        if (ageDraft === "graduate") {
+          const { error: fallbackError } = await supabase
+            .from("profiles")
+            .update({ age_group: "university" })
+            .eq("id", data.user.id);
+          if (fallbackError) throw fallbackError;
+        } else {
+          throw error;
+        }
+      }
+      const profile = sessionStore.getProfile();
+      if (profile) {
+        sessionStore.setProfile({ ...profile, age_group: ageDraft });
+      }
       setAge(ageDraft);
       setAgeMsg(COPY.settings.ageSaved);
     } catch {
@@ -72,7 +93,7 @@ export default function SettingsPage() {
         if (error) throw error;
       }
       const profile = sessionStore.getProfile();
-      sessionStore.setProfile({ nickname: name, avatar: profile?.avatar ?? "sun" });
+      sessionStore.setProfile({ nickname: name, avatar: profile?.avatar ?? "sun", age_group: profile?.age_group });
       setNickMsg(COPY.settings.nicknameSaved);
     } catch {
       setNickMsg(COPY.generalError);

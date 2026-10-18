@@ -21,6 +21,8 @@ export type Candidate = {
   common_ground?: string;
   age_group?: AgeGroup;
   is_same_age?: boolean;
+  is_demo?: boolean;
+  incoming_request_id?: string;
 };
 
 export type ReceivedRequest = {

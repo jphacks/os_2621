@@ -49,6 +49,15 @@ describe("combineEnergy (エネルギー統合)", () => {
     expect(combineEnergy(0, 0)).toBe(1);
     expect(combineEnergy(6, 6)).toBe(5);
   });
+
+  it("気分（mood）が落ち着いているのに初期エネルギーだけ低く選ばれた場合の下方バイアスを補正する", () => {
+    // 自己申告 energy=1 でも、mood=4（少し落ち着いている）かつ AI推定=3 なら effectiveSelf=2 -> round((2+3)/2) = 3
+    expect(combineEnergy(1, 3, 4)).toBe(3);
+    // 自己申告 energy=2、mood=4、AI推定=2 なら effectiveSelf=3 -> round((3+2)/2) = 3
+    expect(combineEnergy(2, 2, 4)).toBe(3);
+    // 気分もつらい (mood=1) 場合は無理に引き上げずそのまま 2 以下を維持（安全側）
+    expect(combineEnergy(1, 2, 1)).toBe(2);
+  });
 });
 
 describe("calculateJaccard (タグのJaccard係数)", () => {
@@ -247,7 +256,7 @@ describe("isEligibleCandidate (候補フィルタ条件・共倒れ防止)", () 
     ).toBe(false);
   });
 
-  it("【同年代・近接年代マッチング & 未成年保護】未成年は完全一致のみ、成人層は同年代および近接年代のみ true を返す", () => {
+  it("【同年代・近接年代マッチング & 未成年保護】未成年は完全一致のみ、大学生・大学院生は同年代および近接年代のみ true を返し、社会人・その他は除外される", () => {
     // 未成年保護のテスト
     const jhMe = createDummySummary({ id: "jh-me", userId: "u-jh-me", ageGroup: "junior_high" });
     const jhOther = createDummySummary({ id: "jh-other", userId: "u-jh-other", ageGroup: "junior_high" });
@@ -255,8 +264,8 @@ describe("isEligibleCandidate (候補フィルタ条件・共倒れ防止)", () 
     const hsOther = createDummySummary({ id: "hs-other", userId: "u-hs-other", ageGroup: "high_school" });
     const univ = createDummySummary({ id: "univ", userId: "u-univ", ageGroup: "university" });
     const grad = createDummySummary({ id: "grad", userId: "u-grad", ageGroup: "graduate" });
-    const work = createDummySummary({ id: "work", userId: "u-work", ageGroup: "working" });
-    const other = createDummySummary({ id: "other", userId: "u-other", ageGroup: "other" });
+    const work = createDummySummary({ id: "work", userId: "u-work", ageGroup: "working" as unknown as AgeGroup });
+    const other = createDummySummary({ id: "other", userId: "u-other", ageGroup: "other" as unknown as AgeGroup });
 
     // 中学生は中学生のみ
     expect(isEligibleCandidate(jhMe, jhOther)).toBe(true);
@@ -274,18 +283,17 @@ describe("isEligibleCandidate (候補フィルタ条件・共倒れ防止)", () 
     expect(isEligibleCandidate(hsMe, work)).toBe(false);
     expect(isEligibleCandidate(hsMe, other)).toBe(false);
 
-    // 成人層の近接年代
-    expect(isEligibleCandidate(univ, grad)).toBe(true); // 大学生 ⇄ 大学院生
+    // 大学生 ⇄ 大学院生（近接年代）
+    expect(isEligibleCandidate(univ, grad)).toBe(true);
     expect(isEligibleCandidate(grad, univ)).toBe(true);
-    expect(isEligibleCandidate(grad, work)).toBe(true); // 大学院生 ⇄ 社会人
-    expect(isEligibleCandidate(work, grad)).toBe(true);
-    expect(isEligibleCandidate(work, other)).toBe(true); // 社会人 ⇄ その他
-    expect(isEligibleCandidate(other, work)).toBe(true);
 
-    // 遠い年代は除外
-    expect(isEligibleCandidate(univ, work)).toBe(false); // 大学生 ⇄ 社会人
-    expect(isEligibleCandidate(univ, other)).toBe(false); // 大学生 ⇄ その他
-    expect(isEligibleCandidate(grad, other)).toBe(false); // 大学院生 ⇄ その他
+    // 社会人・その他は対象外としてすべて除外
+    expect(isEligibleCandidate(univ, work)).toBe(false);
+    expect(isEligibleCandidate(grad, work)).toBe(false);
+    expect(isEligibleCandidate(work, grad)).toBe(false);
+    expect(isEligibleCandidate(work, other)).toBe(false);
+    expect(isEligibleCandidate(univ, other)).toBe(false);
+    expect(isEligibleCandidate(grad, other)).toBe(false);
   });
 
   it("【fail-closed】対象外の年代区分や ageGroup 未設定（undefined/null/空文字/不正文字列）の場合は false を返す", () => {
@@ -340,31 +348,28 @@ describe("isEligibleCandidate (候補フィルタ条件・共倒れ防止)", () 
 });
 
 describe("isValidAgeGroup / AGE_GROUPS (対象年代区分の定義と検証)", () => {
-  it("中学生・高校生・大学生・大学院生・社会人・その他の6区分を有効と判定する", () => {
+  it("中学生・高校生・大学生・大学院生の4区分のみを有効と判定し、社会人・その他は除外する", () => {
     expect(AGE_GROUPS).toEqual([
       "junior_high",
       "high_school",
       "university",
       "graduate",
-      "working",
-      "other",
     ]);
     expect(AGE_GROUP_LABELS).toEqual({
       junior_high: "中学生",
       high_school: "高校生",
       university: "大学生（専門生含む）",
       graduate: "大学院生",
-      working: "社会人",
-      other: "その他",
     });
 
     expect(isValidAgeGroup("junior_high")).toBe(true);
     expect(isValidAgeGroup("high_school")).toBe(true);
     expect(isValidAgeGroup("university")).toBe(true);
     expect(isValidAgeGroup("graduate")).toBe(true);
-    expect(isValidAgeGroup("working")).toBe(true);
-    expect(isValidAgeGroup("other")).toBe(true);
 
+    // 社会人・その他は選択不可・対象外
+    expect(isValidAgeGroup("working")).toBe(false);
+    expect(isValidAgeGroup("other")).toBe(false);
     expect(isValidAgeGroup("elementary")).toBe(false);
     expect(isValidAgeGroup("adult")).toBe(false);
     expect(isValidAgeGroup("")).toBe(false);
@@ -374,7 +379,7 @@ describe("isValidAgeGroup / AGE_GROUPS (対象年代区分の定義と検証)", 
 });
 
 describe("isAgeCompatible / calculateAgeBonus (年代互換性とスコアボーナス)", () => {
-  it("未成年保護: 中学生同士・高校生同士のみ互換があり、異世代（高校生/大学生/大学院生/社会人/その他）とは一切マッチしない（双方向）", () => {
+  it("未成年保護: 中学生同士・高校生同士のみ互換があり、異世代（高校生/大学生/大学院生等）とは一切マッチしない（双方向）", () => {
     // 中学生 ⇄ 中学生 (true)
     expect(isAgeCompatible("junior_high", "junior_high")).toBe(true);
 
@@ -404,25 +409,22 @@ describe("isAgeCompatible / calculateAgeBonus (年代互換性とスコアボー
     expect(isAgeCompatible("other", "high_school")).toBe(false);
   });
 
-  it("青年・成人層: 同年代および近接年代（大学生×大学院生、大学院生×社会人、社会人×その他）は互換あり、離れた世代は互換なし", () => {
+  it("大学生・大学院生: 同年代および近接年代（大学生×大学院生）は互換あり、社会人・その他は対象外として互換なし", () => {
     // 同年代（同世代）
     expect(isAgeCompatible("university", "university")).toBe(true);
     expect(isAgeCompatible("graduate", "graduate")).toBe(true);
-    expect(isAgeCompatible("working", "working")).toBe(true);
-    expect(isAgeCompatible("other", "other")).toBe(true);
 
-    // 近接年代（双方向）
-    // 大学生 ⇄ 大学院生 (true)
+    // 近接年代（双方向: 大学生 ⇄ 大学院生）
     expect(isAgeCompatible("university", "graduate")).toBe(true);
     expect(isAgeCompatible("graduate", "university")).toBe(true);
-    // 大学院生 ⇄ 社会人 (true)
-    expect(isAgeCompatible("graduate", "working")).toBe(true);
-    expect(isAgeCompatible("working", "graduate")).toBe(true);
-    // 社会人 ⇄ その他 (true)
-    expect(isAgeCompatible("working", "other")).toBe(true);
-    expect(isAgeCompatible("other", "working")).toBe(true);
 
-    // 離れた世代（大学生 ⇄ 社会人、大学生 ⇄ その他、大学院生 ⇄ その他）(false - 双方向)
+    // 社会人・その他は対象外（同値でも異世代でもすべて false）
+    expect(isAgeCompatible("working", "working")).toBe(false);
+    expect(isAgeCompatible("other", "other")).toBe(false);
+    expect(isAgeCompatible("graduate", "working")).toBe(false);
+    expect(isAgeCompatible("working", "graduate")).toBe(false);
+    expect(isAgeCompatible("working", "other")).toBe(false);
+    expect(isAgeCompatible("other", "working")).toBe(false);
     expect(isAgeCompatible("university", "working")).toBe(false);
     expect(isAgeCompatible("working", "university")).toBe(false);
     expect(isAgeCompatible("university", "other")).toBe(false);
@@ -443,8 +445,8 @@ describe("isAgeCompatible / calculateAgeBonus (年代互換性とスコアボー
     expect(isAgeCompatible("university", "unknown")).toBe(false);
     expect(isAgeCompatible("elementary", "junior_high")).toBe(false);
     expect(isAgeCompatible("junior_high", "elementary")).toBe(false);
-    expect(isAgeCompatible("adult", "working")).toBe(false);
-    expect(isAgeCompatible("working", "adult")).toBe(false);
+    expect(isAgeCompatible("adult", "graduate")).toBe(false);
+    expect(isAgeCompatible("graduate", "adult")).toBe(false);
 
     // 両方が未設定・無効値（同値であっても無効なら false）
     expect(isAgeCompatible(undefined, undefined)).toBe(false);
@@ -461,23 +463,22 @@ describe("isAgeCompatible / calculateAgeBonus (年代互換性とスコアボー
     // 同年代
     expect(calculateAgeBonus("university", "university")).toBe(1.0);
     expect(calculateAgeBonus("graduate", "graduate")).toBe(1.0);
-    expect(calculateAgeBonus("working", "working")).toBe(1.0);
     expect(calculateAgeBonus("junior_high", "junior_high")).toBe(1.0);
     expect(calculateAgeBonus("high_school", "high_school")).toBe(1.0);
 
-    // 近接年代
+    // 近接年代（大学生 ⇄ 大学院生）
     expect(calculateAgeBonus("university", "graduate")).toBe(0.85);
     expect(calculateAgeBonus("graduate", "university")).toBe(0.85);
-    expect(calculateAgeBonus("graduate", "working")).toBe(0.85);
-    expect(calculateAgeBonus("working", "graduate")).toBe(0.85);
-    expect(calculateAgeBonus("working", "other")).toBe(0.85);
-    expect(calculateAgeBonus("other", "working")).toBe(0.85);
 
-    // 互換なし
+    // 互換なし・対象外（社会人・その他）
+    expect(calculateAgeBonus("working", "working")).toBe(0.0);
+    expect(calculateAgeBonus("other", "other")).toBe(0.0);
+    expect(calculateAgeBonus("graduate", "working")).toBe(0.0);
+    expect(calculateAgeBonus("working", "graduate")).toBe(0.0);
     expect(calculateAgeBonus("university", "working")).toBe(0.0);
     expect(calculateAgeBonus("working", "university")).toBe(0.0);
     expect(calculateAgeBonus("junior_high", "university")).toBe(0.0);
-    expect(calculateAgeBonus("high_school", "working")).toBe(0.0);
+    expect(calculateAgeBonus("high_school", "graduate")).toBe(0.0);
 
     // 未設定・境界値 (fail-closed)
     expect(calculateAgeBonus(undefined, "university")).toBe(0.0);
@@ -519,7 +520,7 @@ describe("isAgeCompatible / calculateAgeBonus (年代互換性とスコアボー
     expect(nearScore).toBeCloseTo(sameScore * 0.85, 4);
   });
 
-  it("大学生 ⇄ 大学生（同年代・高スコア）、大学生 ⇄ 大学院生（近接年代・マッチ成立かつ0.85倍）、大学生 ⇄ 社会人（不成立・スコア0）", () => {
+  it("大学生 ⇄ 大学生（同年代・高スコア）、大学生 ⇄ 大学院生（近接年代・マッチ成立かつ0.85倍）、大学院生 ⇄ 大学院生（同年代・高スコア）", () => {
     const univMe = createDummySummary({
       ageGroup: "university",
       category: "relationships",
@@ -538,8 +539,8 @@ describe("isAgeCompatible / calculateAgeBonus (年代互換性とスコアボー
       tags: ["友人関係"],
       stage: "struggling",
     });
-    const workPeer = createDummySummary({
-      ageGroup: "working",
+    const gradMe = createDummySummary({
+      ageGroup: "graduate",
       category: "relationships",
       tags: ["友人関係"],
       stage: "struggling",
@@ -547,35 +548,13 @@ describe("isAgeCompatible / calculateAgeBonus (年代互換性とスコアボー
 
     const scoreUniv = calculateMatchScore(univMe, univPeer);
     const scoreGrad = calculateMatchScore(univMe, gradPeer);
-    const scoreWork = calculateMatchScore(univMe, workPeer);
+    const scoreGradSame = calculateMatchScore(gradMe, gradPeer);
 
     expect(scoreUniv).toBeGreaterThan(0);
     expect(scoreGrad).toBeGreaterThan(0);
+    expect(scoreGradSame).toBeCloseTo(scoreUniv, 4);
     expect(scoreUniv).toBeGreaterThan(scoreGrad);
     expect(scoreGrad).toBeCloseTo(scoreUniv * 0.85, 4);
-    expect(scoreWork).toBe(0.0);
-  });
-
-  it("大学院生 ⇄ 社会人（近接年代・マッチ成立）、大学生 ⇄ 社会人（離れた年代・不成立）", () => {
-    const grad = createDummySummary({ id: "sum-grad", userId: "u-grad", ageGroup: "graduate" });
-    const work = createDummySummary({ id: "sum-work", userId: "u-work", ageGroup: "working" });
-    const univ = createDummySummary({ id: "sum-univ", userId: "u-univ", ageGroup: "university" });
-
-    // isAgeCompatible
-    expect(isAgeCompatible(grad.ageGroup, work.ageGroup)).toBe(true);
-    expect(isAgeCompatible(work.ageGroup, grad.ageGroup)).toBe(true);
-    expect(isAgeCompatible(univ.ageGroup, work.ageGroup)).toBe(false);
-    expect(isAgeCompatible(work.ageGroup, univ.ageGroup)).toBe(false);
-
-    // isEligibleCandidate
-    expect(isEligibleCandidate(grad, work)).toBe(true);
-    expect(isEligibleCandidate(work, grad)).toBe(true);
-    expect(isEligibleCandidate(univ, work)).toBe(false);
-    expect(isEligibleCandidate(work, univ)).toBe(false);
-
-    // calculateMatchScore
-    expect(calculateMatchScore(grad, work)).toBeGreaterThan(0);
-    expect(calculateMatchScore(univ, work)).toBe(0.0);
   });
 });
 
@@ -712,5 +691,92 @@ describe("rankCandidates (候補ランキング・スコア0.3未満除外・同
     expect(ranked[1].score).toBeCloseTo(0.77, 5);
     expect(ranked[2].score).toBeCloseTo(0.56, 5);
   });
+
+  it("同スコアの候補が複数いる場合は、より心のゆとり（energy）が高い相手を優先して上位に並べる", () => {
+    const candEnergy3 = createDummySummary({
+      id: "sum-e3",
+      userId: "user-e3",
+      ageGroup: "university",
+      category: "relationships",
+      tags: ["友人関係", "孤立感"],
+      energy: 3,
+      stage: "recovering",
+    });
+    const candEnergy5 = createDummySummary({
+      id: "sum-e5",
+      userId: "user-e5",
+      ageGroup: "university",
+      category: "relationships",
+      tags: ["友人関係", "孤立感"],
+      energy: 5,
+      stage: "recovering",
+    });
+
+    const ranked = rankCandidates(me, [candEnergy3, candEnergy5]);
+    expect(ranked.map((r) => r.candidate.id)).toEqual(["sum-e5", "sum-e3"]);
+  });
 });
 
+describe("rankCandidates & calculateJaccard (実在ユーザー優先・タグ表記ゆれ正規化)", () => {
+  const me = createDummySummary({
+    id: "sum-me",
+    userId: "user-me",
+    category: "relationships",
+    tags: ["友人関係", "孤立感"],
+    energy: 2,
+    stage: "struggling",
+  });
+
+  it("実在ユーザー（isDemo !== true）をデモ用シードユーザー（isDemo === true）より優先して上位3件に選ぶ", () => {
+    const demo1 = createDummySummary({
+      id: "sum-demo-1",
+      userId: "demo-1",
+      isDemo: true,
+      category: "relationships",
+      tags: ["友人関係", "孤立感"],
+      energy: 4,
+      stage: "recovering",
+    });
+    const demo2 = createDummySummary({
+      id: "sum-demo-2",
+      userId: "demo-2",
+      isDemo: true,
+      category: "relationships",
+      tags: ["友人関係", "孤立感"],
+      energy: 4,
+      stage: "recovering",
+    });
+    const demo3 = createDummySummary({
+      id: "sum-demo-3",
+      userId: "demo-3",
+      isDemo: true,
+      category: "relationships",
+      tags: ["友人関係", "孤立感"],
+      energy: 4,
+      stage: "recovering",
+    });
+    const realUser = createDummySummary({
+      id: "sum-real-1",
+      userId: "real-1",
+      isDemo: false,
+      category: "relationships",
+      tags: ["サークル"],
+      energy: 3,
+      stage: "coping",
+    });
+
+    const ranked = rankCandidates(me, [demo1, demo2, demo3, realUser]);
+    expect(ranked).toHaveLength(3);
+    expect(ranked[0].candidate.id).toBe("sum-real-1");
+    expect(ranked[0].candidate.isDemo).toBe(false);
+  });
+
+  it("表記ゆれ・同義語タグ（例: 人間関係→友人関係、孤独→孤立感）を正規化してJaccard係数を計算する", () => {
+    expect(
+      calculateJaccard(["人間関係", "孤独"], ["友人関係", "孤立感"])
+    ).toBe(1);
+    expect(
+      calculateJaccard(["就職活動", "あせり"], ["就活", "焦り"])
+    ).toBe(1);
+  });
+});

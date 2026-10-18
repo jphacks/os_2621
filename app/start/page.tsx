@@ -57,7 +57,10 @@ export default function StartPage() {
         }
         // すでに年代が登録されているユーザーが、別の年代を選んだときは、理由を伝えて止める（年代は変えられない）
         const { data: existing } = await supabase.from("profiles").select("age_group").eq("id", userId).maybeSingle();
-        if (existing?.age_group && existing.age_group !== ageGroup) {
+        const savedLocalAge = sessionStore.getProfile()?.age_group;
+        const isGraduateFallback =
+          existing?.age_group === "university" && ageGroup === "graduate" && savedLocalAge === "graduate";
+        if (existing?.age_group && existing.age_group !== ageGroup && !isGraduateFallback) {
           setError(COPY.start.errors.ageLocked);
           setBusy(false);
           return;
@@ -65,7 +68,17 @@ export default function StartPage() {
         const { error: upsertError } = await supabase
           .from("profiles")
           .upsert({ id: userId, nickname: name, avatar, age_group: ageGroup });
-        if (upsertError) throw upsertError;
+        if (upsertError) {
+          // DB側の旧CHECK制約（graduate未反映）で弾かれた場合は、互換性のある university としてDB保存し進行可能にする
+          if (ageGroup === "graduate") {
+            const { error: fallbackError } = await supabase
+              .from("profiles")
+              .upsert({ id: userId, nickname: name, avatar, age_group: "university" });
+            if (fallbackError) throw fallbackError;
+          } else {
+            throw upsertError;
+          }
+        }
       }
       sessionStore.setProfile({ nickname: name, avatar, age_group: ageGroup });
       router.push("/checkin");

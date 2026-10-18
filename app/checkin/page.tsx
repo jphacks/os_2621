@@ -46,7 +46,12 @@ export default function CheckinPage() {
         </CardHeader>
         <CardContent className="space-y-8">
           <ScaleInput id="mood" label={COPY.checkin.moodLabel} value={mood} onChange={setMood} scale={COPY.checkin.moodScale} />
-          <ScaleInput id="energy" label={COPY.checkin.energyLabel} value={energy} onChange={setEnergy} scale={COPY.checkin.energyScale} />
+          <div className="space-y-2">
+            <ScaleInput id="energy" label={COPY.checkin.energyLabel} value={energy} onChange={setEnergy} scale={COPY.checkin.energyScale} />
+            <p className="text-xs leading-relaxed text-muted-foreground">
+              {COPY.checkin.energyHint}
+            </p>
+          </div>
           {notice && (
             <p role="status" className="text-sm text-muted-foreground">
               {notice}

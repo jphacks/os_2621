@@ -19,25 +19,20 @@ export type Stage = "struggling" | "coping" | "recovering";
  * - high_school: 高校生（未成年保護: 高校生同士のみ）
  * - university: 大学生（短期大学・専門学校・高専等含む）
  * - graduate: 大学院生
- * - working: 社会人
- * - other: その他
- * ※ 未成年と成人は絶対にマッチングしない。
+ * ※ 未成年と成人（大学生・大学院生）は絶対にマッチングしない。
+ * ※ 社会人 (working)・その他 (other) は対象外として除外。
  */
 export type AgeGroup =
   | "junior_high"
   | "high_school"
   | "university"
-  | "graduate"
-  | "working"
-  | "other";
+  | "graduate";
 
 export const AGE_GROUPS: readonly AgeGroup[] = [
   "junior_high",
   "high_school",
   "university",
   "graduate",
-  "working",
-  "other",
 ] as const;
 
 export const AGE_GROUP_LABELS: Record<AgeGroup, string> = {
@@ -45,8 +40,6 @@ export const AGE_GROUP_LABELS: Record<AgeGroup, string> = {
   high_school: "高校生",
   university: "大学生（専門生含む）",
   graduate: "大学院生",
-  working: "社会人",
-  other: "その他",
 };
 
 /**
@@ -63,15 +56,13 @@ export function isValidAgeGroup(value: unknown): value is AgeGroup {
  * 2つの年代区分がマッチング可能（互換性あり）かを判定する純粋関数
  *
  * 【安全原則・未成年保護】
- * 1. どちらかが未設定（undefined/null）または無効値なら除外 (fail-closed)
+ * 1. どちらかが未設定（undefined/null）または無効値（working/other含む）なら除外 (fail-closed)
  * 2. 中学生 (junior_high) は中学生同士のみ
  * 3. 高校生 (high_school) は高校生同士のみ
- * 4. 未成年と成人（大学・大学院・社会人・その他）は絶対にマッチしない
+ * 4. 未成年と成人（大学生・大学院生）は絶対にマッチしない
  *
- * 【青年・成人層の近接年代間マッチング】
+ * 【大学生・大学院生の近接年代間マッチング】
  * - 大学生 (university) ⇄ 大学院生 (graduate)
- * - 大学院生 (graduate) ⇄ 社会人 (working)
- * - 社会人 (working) ⇄ その他 (other)
  * - 同年代同士は常に互換あり
  */
 export function isAgeCompatible(a?: unknown, b?: unknown): boolean {
@@ -90,14 +81,10 @@ export function isAgeCompatible(a?: unknown, b?: unknown): boolean {
     return false;
   }
 
-  // 青年・成人層の近接年代ペア（双方向）
+  // 大学生・大学院生の近接年代ペア（双方向）
   const compatiblePairs: ReadonlyArray<readonly [AgeGroup, AgeGroup]> = [
     ["university", "graduate"],
     ["graduate", "university"],
-    ["graduate", "working"],
-    ["working", "graduate"],
-    ["working", "other"],
-    ["other", "working"],
   ];
 
   return compatiblePairs.some(([x, y]) => a === x && b === y);
@@ -126,6 +113,7 @@ export interface MatchSummary {
   id: string;
   userId: string;
   ageGroup?: AgeGroup;
+  isDemo?: boolean;
   category: Category;
   tags: string[];
   energy: number; // 1〜5
@@ -152,20 +140,82 @@ export const MAX_CANDIDATES = 3;
 /**
  * 自己申告エネルギーとAI推定エネルギーを統合する純粋関数 (SPEC.md §6.2)
  * energy = round((自己申告のエネルギー + AIの推定) / 2) // 1〜5 にクランプ
+ *
+ * 【バイアス補正（任意引数 mood 指定時）】
+ * 悩み相談の入り口では「気分（mood）は落ち着いている（3〜5）のに、エネルギーは謙遜や疲労感から低く（1〜2）選ぶ」傾向がある。
+ * そのため mood が 4 以上（または mood が 3 以上かつ AI対話後の推定 readiness が 3 以上）の場合は、
+ * 初期自己申告の下方バイアスを +1（最大3まで）緩和してから統合する。
  */
-export function combineEnergy(self: number, estimated: number): number {
-  const rounded = Math.round((self + estimated) / 2);
+export function combineEnergy(
+  self: number,
+  estimated: number,
+  mood?: number
+): number {
+  let effectiveSelf = self;
+  if (
+    mood !== undefined &&
+    self <= 2 &&
+    (mood >= 4 || (mood >= 3 && estimated >= 3))
+  ) {
+    effectiveSelf = Math.min(3, self + 1);
+  }
+  const rounded = Math.round((effectiveSelf + estimated) / 2);
   return Math.min(5, Math.max(1, rounded));
+}
+
+const TAG_SYNONYM_MAP: Readonly<Record<string, string>> = {
+  人間関係: "友人関係",
+  友達関係: "友人関係",
+  対人関係: "友人関係",
+  友達: "友人関係",
+  友人: "友人関係",
+  クラスメイト: "友人関係",
+  孤立: "孤立感",
+  孤独: "孤立感",
+  孤独感: "孤立感",
+  ひとりぼっち: "孤立感",
+  浮いている: "孤立感",
+  なじめていない: "孤立感",
+  なじめない: "新生活",
+  環境変化: "新生活",
+  新環境: "新生活",
+  大学生活: "新生活",
+  部活: "サークル",
+  部活動: "サークル",
+  寂しさ: "さみしさ",
+  寂しい: "さみしさ",
+  さみしい: "さみしさ",
+  就職活動: "就活",
+  就職: "就活",
+  あせり: "焦り",
+  キャリア: "進路",
+  将来: "進路",
+  学業: "勉強",
+  授業: "勉強",
+  試験: "勉強",
+  テスト: "勉強",
+  睡眠: "生活リズム",
+  不眠: "生活リズム",
+  夜更かし: "生活リズム",
+};
+
+/**
+ * タグの表記揺れ（類義語・全半角・空白）を正規化する純粋関数
+ */
+export function normalizeTag(raw: string): string {
+  const cleaned = raw.normalize("NFKC").trim();
+  if (!cleaned) return "";
+  return TAG_SYNONYM_MAP[cleaned] ?? cleaned;
 }
 
 /**
  * 2つのタグ配列のJaccard係数（積集合 / 和集合）を計算する純粋関数 (0〜1)
- * 前後の空白を除去し、空文字を除いたユニーク集合で比較する。
+ * 前後の空白や表記揺れを正規化し、空文字を除いたユニーク集合で比較する。
  * 両方とも空配列の場合は 0 を返す。
  */
 export function calculateJaccard(tagsA: string[], tagsB: string[]): number {
-  const setA = new Set(tagsA.map((t) => t.trim()).filter((t) => t.length > 0));
-  const setB = new Set(tagsB.map((t) => t.trim()).filter((t) => t.length > 0));
+  const setA = new Set(tagsA.map(normalizeTag).filter((t) => t.length > 0));
+  const setB = new Set(tagsB.map(normalizeTag).filter((t) => t.length > 0));
 
   if (setA.size === 0 && setB.size === 0) {
     return 0;
@@ -306,7 +356,8 @@ export function isEligibleCandidate(
 }
 
 /**
- * 適格な候補を抽出し、スコア降順で上位3件（score >= 0.3）を返す純粋関数 (SPEC.md §6.2)
+ * 適格な候補を抽出し、実在ユーザー（!isDemo）をデモ用シードより優先した上でスコア降順で上位3件（score >= 0.3）を返す純粋関数 (SPEC.md §6.2)
+ * スコアが同点の場合は、より心のゆとり（energy）が高い候補を優先して上位に並べる（共倒れリスクのさらなる低減）。
  */
 export function rankCandidates(
   me: MatchSummary,
@@ -320,6 +371,16 @@ export function rankCandidates(
       score: calculateMatchScore(me, candidate),
     }))
     .filter((item) => item.score >= MIN_MATCH_SCORE)
-    .sort((a, b) => b.score - a.score)
+    .sort((a, b) => {
+      const aDemo = a.candidate.isDemo === true ? 1 : 0;
+      const bDemo = b.candidate.isDemo === true ? 1 : 0;
+      if (aDemo !== bDemo) {
+        return aDemo - bDemo;
+      }
+      if (b.score !== a.score) {
+        return b.score - a.score;
+      }
+      return b.candidate.energy - a.candidate.energy;
+    })
     .slice(0, MAX_CANDIDATES);
 }

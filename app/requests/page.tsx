@@ -67,6 +67,16 @@ export default function RequestsPage() {
     }
   }
 
+  async function cancelRequest(id: string) {
+    setError(null);
+    try {
+      await api(`/api/match/requests?id=${encodeURIComponent(id)}`, { method: "DELETE" });
+      await refresh();
+    } catch {
+      setError(COPY.requests.failed);
+    }
+  }
+
   const received = data?.received.filter((r) => r.status === "pending") ?? [];
   const sent = data?.sent ?? [];
   const statusLabel = {
@@ -132,11 +142,18 @@ export default function RequestsPage() {
                   <p className="text-xs text-muted-foreground">{statusLabel[r.status]}</p>
                 </div>
               </div>
-              {r.status === "accepted" && r.room_id && (
-                <Button asChild className="min-h-[44px]">
-                  <Link href={`/rooms/${r.room_id}`}>{COPY.requests.enter}</Link>
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {r.status === "accepted" && r.room_id && (
+                  <Button asChild className="min-h-[44px]">
+                    <Link href={`/rooms/${r.room_id}`}>{COPY.requests.enter}</Link>
+                  </Button>
+                )}
+                {r.status === "pending" && (
+                  <Button variant="ghost" size="sm" onClick={() => void cancelRequest(r.id)} className="min-h-[36px] text-xs text-muted-foreground">
+                    取り消す
+                  </Button>
+                )}
+              </div>
             </CardContent>
           </Card>
         ))}

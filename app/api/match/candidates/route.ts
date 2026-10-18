@@ -1,6 +1,15 @@
 import { NextResponse } from "next/server";
 import { getAdmin, getUserId, jsonError } from "@/lib/api/common";
-import { loadActiveMatchIds, loadAgeGroups, loadBlockedIds, loadMySummary, toMatchSummary, type SummaryRow } from "@/lib/api/match";
+import {
+  loadActiveMatchIds,
+  loadAgeGroups,
+  loadBlockedIds,
+  loadDemoUserIds,
+  loadIncomingRequestMap,
+  loadMySummary,
+  toMatchSummary,
+  type SummaryRow,
+} from "@/lib/api/match";
 import { isRiskBlocked } from "@/lib/api/risk";
 import { streamText } from "@/lib/llm/claude";
 import { loadPrompt } from "@/lib/llm/prompts";
@@ -53,24 +62,39 @@ export async function GET() {
       .neq("risk_level", "crisis")
       .gt("expires_at", new Date().toISOString())
       .limit(200)).data ?? []) as SummaryRow[];
-    const ages = await loadAgeGroups(admin, [userId, ...rowsAll.map((r) => r.user_id)]);
+    const allUserIds = [userId, ...rowsAll.map((r) => r.user_id)];
+    const [ages, demoUserIds, blockedUserIds, activeMatchUserIds, incomingRequestMap] = await Promise.all([
+      loadAgeGroups(admin, allUserIds),
+      loadDemoUserIds(admin, rowsAll.map((r) => r.user_id)),
+      loadBlockedIds(admin, userId),
+      loadActiveMatchIds(admin, userId),
+      loadIncomingRequestMap(admin, userId),
+    ]);
     const myAge = ages.get(userId);
     if (!myAge) return jsonError(403, "年代がまだ選ばれていません。設定から選んでください。");
 
-    const [blockedUserIds, activeMatchUserIds] = await Promise.all([
-      loadBlockedIds(admin, userId),
-      loadActiveMatchIds(admin, userId),
-    ]);
-
-    const rows = rowsAll;
-    const ranked = rankCandidates(toMatchSummary(mine, myAge), rows.map((r) => toMatchSummary(r, ages.get(r.user_id))), {
-      blockedUserIds,
-      activeMatchUserIds,
+    // 同一ユーザーに複数の要約がある場合は最新の1件に絞る
+    const seenUsers = new Set<string>();
+    const rows = rowsAll.filter((r) => {
+      if (seenUsers.has(r.user_id)) return false;
+      seenUsers.add(r.user_id);
+      return true;
     });
-    if (ranked.length === 0) return NextResponse.json({ candidates: [] });
+
+    const ranked = rankCandidates(
+      toMatchSummary(mine, myAge, false),
+      rows.map((r) => toMatchSummary(r, ages.get(r.user_id), demoUserIds.has(r.user_id))),
+      {
+        blockedUserIds,
+        activeMatchUserIds,
+      }
+    );
+    if (ranked.length === 0) {
+      return NextResponse.json({ candidates: [], received_count: incomingRequestMap.size });
+    }
 
     const ids = ranked.map((r) => r.candidate.userId);
-    const { data: profiles } = await admin.from("profiles").select("id,nickname,avatar").in("id", ids);
+    const { data: profiles } = await admin.from("profiles").select("id,nickname,avatar,is_demo").in("id", ids);
     const byId = new Map((profiles ?? []).map((p) => [p.id, p]));
     const textById = new Map(rows.map((r) => [r.id, r.share_text]));
 
@@ -89,10 +113,15 @@ export async function GET() {
           common_ground: await commonGround(mine.share_text, shareText),
           age_group: candidateAge,
           is_same_age: candidateAge === myAge,
+          is_demo: Boolean(profile.is_demo),
+          incoming_request_id: incomingRequestMap.get(candidate.userId),
         };
       })
     );
-    return NextResponse.json({ candidates: candidates.filter((c): c is CandidateDto => c !== null) });
+    return NextResponse.json({
+      candidates: candidates.filter((c): c is CandidateDto => c !== null),
+      received_count: incomingRequestMap.size,
+    });
   } catch {
     console.warn("[candidates] failed");
     return jsonError(500);

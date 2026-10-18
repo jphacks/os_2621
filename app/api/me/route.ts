@@ -1,5 +1,51 @@
 import { NextResponse } from "next/server";
 import { getAdmin, getUserId, jsonError } from "@/lib/api/common";
+import { loadMySummary } from "@/lib/api/match";
+
+// サーバー上の進行状態を取得する（別タブ・リロード・再チェックイン時の FlowGuard 復元用）
+export async function GET() {
+  const userId = await getUserId();
+  if (!userId) return jsonError(401);
+
+  try {
+    const admin = getAdmin();
+    const [
+      { data: profile },
+      { data: checkin },
+      summary,
+      { data: members },
+      { data: risk },
+    ] = await Promise.all([
+      admin.from("profiles").select("nickname,avatar,age_group").eq("id", userId).maybeSingle(),
+      admin
+        .from("checkins")
+        .select("mood,energy")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle(),
+      loadMySummary(admin, userId),
+      admin.from("room_members").select("room_id").eq("user_id", userId),
+      admin.from("session_risk").select("level,blocked_until").eq("user_id", userId).maybeSingle(),
+    ]);
+
+    const riskActive = !!risk && new Date(risk.blocked_until).getTime() > Date.now();
+    const isCrisis = riskActive && risk.level === "crisis";
+    const isMatchingBlocked = riskActive;
+
+    return NextResponse.json({
+      profile: profile ?? null,
+      checkin: checkin ?? null,
+      summaryShared: Boolean(summary),
+      summaryText: summary?.share_text ?? null,
+      joinedRoomIds: (members ?? []).map((m) => m.room_id),
+      isCrisis,
+      isMatchingBlocked,
+    });
+  } catch {
+    return jsonError(500);
+  }
+}
 
 // 全データ削除（SPEC §5.9）。blocks と reports は、安全のため残す。
 export async function DELETE() {

@@ -2,6 +2,7 @@ import Link from "next/link";
 import { HeartHandshake, Settings, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { HeaderOffset } from "@/components/header-offset";
+import { COPY } from "@/lib/copy";
 
 // 画面遷移バーは開発・確認用。NEXT_PUBLIC_DEV_NAV=true のときだけ表示する
 const SHOW_DEV_NAV = process.env.NEXT_PUBLIC_DEV_NAV === "true";
@@ -29,7 +30,7 @@ export function Header() {
           className="flex items-center gap-2 font-semibold text-foreground hover:opacity-80 min-h-[44px]"
         >
           <Sun className="h-5 w-5 text-primary" aria-hidden="true" />
-          <span>ひだまり</span>
+          <span>{COPY.appName}</span>
         </Link>
 
         <div className="flex items-center gap-2">
