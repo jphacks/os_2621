@@ -39,7 +39,7 @@ export default function CandidatesPage() {
         body: { to_user: c.user_id, to_summary: c.summary_id },
       });
       if (res.matched && res.room_id) {
-        sessionStore.addJoinedRoomId(res.room_id);
+        sessionStore.setActiveRoomId(res.room_id);
         router.push(`/rooms/${res.room_id}`);
         return;
       }

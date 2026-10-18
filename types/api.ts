@@ -41,6 +41,7 @@ export type ReceivedRequestDto = {
   share_text: string;
   status: RequestStatus;
   expires_at: string;
+  room_id?: string | null;
 };
 
 export type SentRequestDto = {

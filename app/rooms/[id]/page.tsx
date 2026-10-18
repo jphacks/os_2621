@@ -11,6 +11,7 @@ import { BreatheGuide } from "@/components/breathe-guide";
 import { HotlineList } from "@/components/hotline-list";
 import { CallPanel, CallPreConfirmModal } from "@/components/room/call-panel";
 import { api } from "@/components/api";
+import { sessionStore } from "@/components/session-store";
 import { COPY, avatarEmoji } from "@/lib/copy";
 import { getFacilitatorConfig } from "@/lib/facilitator/config";
 import { createClient } from "@/lib/supabase/client";
@@ -111,14 +112,22 @@ export default function RoomPage() {
     });
   }, []);
 
-  const applyRoom = useCallback((r: RoomRow) => {
-    setRoom(r);
-    if (r.status === "ended") {
-      setEndedText(
-        r.end_reason === "report" ? COPY.room.endedReport : r.end_reason === "safety" ? COPY.room.endedSafety : COPY.room.ended
-      );
-    }
-  }, []);
+  const applyRoom = useCallback(
+    (r: RoomRow) => {
+      setRoom(r);
+      if (r.status === "ended") {
+        setEndedText(
+          r.end_reason === "report" ? COPY.room.endedReport : r.end_reason === "safety" ? COPY.room.endedSafety : COPY.room.ended
+        );
+        if (!demo && sessionStore.getActiveRoomId() === id) {
+          sessionStore.setActiveRoomId(null);
+        }
+      } else if (!demo && new Date(r.ends_at).getTime() > Date.now()) {
+        sessionStore.setActiveRoomId(id);
+      }
+    },
+    [demo, id]
+  );
 
   // 初期読み込みと Realtime の購読
   useEffect(() => {
@@ -143,6 +152,7 @@ export default function RoomPage() {
         if (cancelled) return;
         if (roomRes.error || !roomRes.data || !uid) throw new Error("load");
         setMe(uid);
+        sessionStore.addJoinedRoomId(id);
         applyRoom(roomRes.data as RoomRow);
         mergeMessages((msgRes.data ?? []) as Message[]);
 
@@ -150,6 +160,10 @@ export default function RoomPage() {
         const { data: profiles } = await supabase.from("profiles").select("id,nickname,avatar").in("id", ids);
         if (cancelled) return;
         setPeople(Object.fromEntries((profiles ?? []).map((p) => [p.id, { nickname: p.nickname, avatar: p.avatar }])));
+        if ((memberRes.data ?? []).some((m) => m.user_id === uid && m.left_at)) {
+          setEndedText(COPY.room.ended);
+          if (sessionStore.getActiveRoomId() === id) sessionStore.setActiveRoomId(null);
+        }
         if ((memberRes.data ?? []).some((m) => m.user_id !== uid && m.left_at)) {
           mergeMessages([{ id: "partner-left", sender_id: null, sender_type: "system", body: COPY.room.partnerLeft, created_at: "~" }]);
         }
@@ -213,8 +227,13 @@ export default function RoomPage() {
   }, [now, room, demo, ended, endsAt, startedAt, id, messages]);
 
   useEffect(() => {
-    if (room?.status === "active" && endsAt && now >= endsAt && !endedText) setEndedText(COPY.room.ended);
-  }, [now, room, endsAt, endedText]);
+    if (room?.status === "active" && endsAt && now >= endsAt && !endedText) {
+      setEndedText(COPY.room.ended);
+      if (!demo && sessionStore.getActiveRoomId() === id) {
+        sessionStore.setActiveRoomId(null);
+      }
+    }
+  }, [now, room, endsAt, endedText, demo, id]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -237,6 +256,7 @@ export default function RoomPage() {
       if (r.type === "crisis") {
         // 危機を表す発言は相手に届かない。本人にだけ窓口を案内する
         setCrisis(true);
+        if (sessionStore.getActiveRoomId() === id) sessionStore.setActiveRoomId(null);
       } else if (r.masked) {
         setNotice(COPY.room.masked);
       }
@@ -255,12 +275,14 @@ export default function RoomPage() {
 
   async function leave() {
     call.endCall();
+    if (!demo && sessionStore.getActiveRoomId() === id) sessionStore.setActiveRoomId(null);
     if (!demo) await api(`/api/rooms/${id}/leave`, { method: "POST", body: {} }).catch(() => {});
     setEndedText(COPY.room.ended);
   }
 
   async function block() {
     call.endCall();
+    if (!demo && sessionStore.getActiveRoomId() === id) sessionStore.setActiveRoomId(null);
     if (!demo && partnerId) await api("/api/blocks", { body: { blocked_user_id: partnerId, room_id: id } }).catch(() => {});
     setEndedText(COPY.room.ended);
   }
@@ -268,6 +290,7 @@ export default function RoomPage() {
   async function report(reason: string) {
     call.endCall();
     setReporting(false);
+    if (!demo && sessionStore.getActiveRoomId() === id) sessionStore.setActiveRoomId(null);
     if (!demo && partnerId) await api("/api/reports", { body: { reported_user_id: partnerId, room_id: id, reason } }).catch(() => {});
     setEndedText(COPY.room.endedReport);
   }

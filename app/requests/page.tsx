@@ -12,21 +12,49 @@ import { createClient } from "@/lib/supabase/client";
 
 const POLL_MS = 8000;
 
-// P6 リクエスト（届いたものへの承諾 / 見送りと、送ったものの状態）
+type RoomSummary = {
+  id: string;
+  status: "active" | "ended";
+  started_at: string;
+  ends_at: string;
+  partner_nickname: string;
+  partner_avatar: string;
+  left: boolean;
+};
+
+// P6 リクエスト（届いたものへの承諾 / 見送りと、送ったものの状態、以前のチャット記録）
 export default function RequestsPage() {
   const router = useRouter();
   const [data, setData] = useState<RequestsResponse | null>(null);
+  const [rooms, setRooms] = useState<RoomSummary[]>([]);
   const [error, setError] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const res = await api<RequestsResponse>("/api/match/requests");
+      const [res, meRes] = await Promise.all([
+        api<RequestsResponse>("/api/match/requests"),
+        fetch("/api/me")
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
       setData(res);
       res.sent.forEach((r) => {
         if (r.status === "accepted" && r.room_id) {
           sessionStore.addJoinedRoomId(r.room_id);
         }
       });
+      res.received.forEach((r) => {
+        if (r.status === "accepted" && r.room_id) {
+          sessionStore.addJoinedRoomId(r.room_id);
+        }
+      });
+      if (meRes && Array.isArray(meRes.rooms)) {
+        setRooms(meRes.rooms as RoomSummary[]);
+        (meRes.rooms as RoomSummary[]).forEach((rm) => sessionStore.addJoinedRoomId(rm.id));
+        if (meRes.activeRoomId !== undefined) {
+          sessionStore.setActiveRoomId(meRes.activeRoomId ?? null);
+        }
+      }
     } catch {
       setError(COPY.generalError);
     }
@@ -57,7 +85,7 @@ export default function RequestsPage() {
     try {
       const r = await api<{ room_id?: string }>(`/api/match/requests/${id}/respond`, { body: { accept } });
       if (accept && r.room_id) {
-        sessionStore.addJoinedRoomId(r.room_id);
+        sessionStore.setActiveRoomId(r.room_id);
         router.push(`/rooms/${r.room_id}`);
       } else {
         await refresh();
@@ -77,7 +105,7 @@ export default function RequestsPage() {
     }
   }
 
-  const received = data?.received.filter((r) => r.status === "pending") ?? [];
+  const received = data?.received.filter((r) => r.status === "pending" || (r.status === "accepted" && r.room_id)) ?? [];
   const sent = data?.sent ?? [];
   const statusLabel = {
     pending: COPY.requests.waiting,
@@ -99,6 +127,36 @@ export default function RequestsPage() {
         </p>
       )}
 
+      {rooms.length > 0 && (
+        <section className="space-y-3" aria-labelledby="rooms-history-title">
+          <h2 id="rooms-history-title" className="text-sm font-medium">
+            これまでのチャット記録・進行中のルーム
+          </h2>
+          {rooms.map((rm) => (
+            <Card key={rm.id} className="shadow-hidamari">
+              <CardContent className="flex flex-wrap items-center justify-between gap-3 pt-6">
+                <div className="flex items-center gap-3">
+                  <span className="text-2xl" aria-hidden="true">
+                    {avatarEmoji(rm.partner_avatar)}
+                  </span>
+                  <div>
+                    <p className="font-medium">{rm.partner_nickname}</p>
+                    <p className="text-xs text-muted-foreground">
+                      {rm.status === "active" ? "現在お話し中のルーム" : "以前のチャット記録"}
+                    </p>
+                  </div>
+                </div>
+                <Button asChild variant={rm.status === "active" ? "default" : "outline"} className="min-h-[44px]">
+                  <Link href={`/rooms/${rm.id}`}>
+                    {rm.status === "active" ? COPY.requests.enter : "記録を見る"}
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ))}
+        </section>
+      )}
+
       <section className="space-y-3" aria-labelledby="received-title">
         <h2 id="received-title" className="text-sm font-medium">
           {COPY.requests.received}
@@ -115,10 +173,18 @@ export default function RequestsPage() {
               </div>
               <p className="whitespace-pre-wrap text-sm leading-relaxed">{r.share_text}</p>
               <div className="flex flex-wrap gap-3">
-                <Button onClick={() => void respond(r.id, true)} className="min-h-[44px]">{COPY.requests.accept}</Button>
-                <Button variant="outline" onClick={() => void respond(r.id, false)} className="min-h-[44px]">
-                  {COPY.requests.decline}
-                </Button>
+                {r.status === "pending" ? (
+                  <>
+                    <Button onClick={() => void respond(r.id, true)} className="min-h-[44px]">{COPY.requests.accept}</Button>
+                    <Button variant="outline" onClick={() => void respond(r.id, false)} className="min-h-[44px]">
+                      {COPY.requests.decline}
+                    </Button>
+                  </>
+                ) : r.room_id ? (
+                  <Button asChild className="min-h-[44px]">
+                    <Link href={`/rooms/${r.room_id}`}>{COPY.requests.enter}</Link>
+                  </Button>
+                ) : null}
               </div>
             </CardContent>
           </Card>
@@ -159,9 +225,14 @@ export default function RequestsPage() {
         ))}
       </section>
 
-      <Button asChild variant="outline">
-        <Link href="/candidates">{COPY.requests.toCandidates}</Link>
-      </Button>
+      <div className="flex flex-wrap gap-3">
+        <Button asChild variant="outline">
+          <Link href="/candidates">{COPY.requests.toCandidates}</Link>
+        </Button>
+        <Button asChild variant="ghost">
+          <Link href="/consult">AIとの相談へ</Link>
+        </Button>
+      </div>
     </div>
   );
 }

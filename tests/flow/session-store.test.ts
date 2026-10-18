@@ -24,16 +24,22 @@ class MockStorage implements Storage {
 }
 
 describe("sessionStore", () => {
+  let mockLocalStorage: MockStorage;
+  let mockSessionStorage: MockStorage;
+
   beforeAll(() => {
-    const mockStorage = new MockStorage();
+    mockLocalStorage = new MockStorage();
+    mockSessionStorage = new MockStorage();
     // @ts-expect-error test mock
     globalThis.window = {
-      sessionStorage: mockStorage,
+      localStorage: mockLocalStorage,
+      sessionStorage: mockSessionStorage,
       dispatchEvent: () => true,
       addEventListener: () => {},
       removeEventListener: () => {},
     };
-    globalThis.sessionStorage = mockStorage;
+    globalThis.localStorage = mockLocalStorage;
+    globalThis.sessionStorage = mockSessionStorage;
     // @ts-expect-error test mock
     globalThis.CustomEvent = class CustomEvent {
       detail: unknown;
@@ -44,6 +50,8 @@ describe("sessionStore", () => {
   });
 
   beforeEach(() => {
+    mockLocalStorage.clear();
+    mockSessionStorage.clear();
     sessionStore.clearAll();
   });
 
@@ -83,6 +91,32 @@ describe("sessionStore", () => {
     expect(sessionStore.getFlowState().hasMessages).toBe(true);
   });
 
+  it("タブを閉じて sessionStorage が消えても localStorage からAIとの会話履歴を復元できる", () => {
+    const history = [
+      { role: "user" as const, content: "最近サークルで孤立していて悩んでいます" },
+      { role: "assistant" as const, content: "そうだったのですね。詳しくお聞かせいただけますか？" },
+    ];
+    sessionStore.setProfile({ nickname: "ひなた", avatar: "sun", age_group: "university" });
+    sessionStore.setCheckin({ mood: 3, energy: 3 });
+    sessionStore.setMessages(history);
+
+    // タブを閉じて新しいタブを開いた状況をシミュレート（sessionStorage のみ空になる）
+    mockSessionStorage.clear();
+
+    expect(sessionStore.getMessages()).toEqual(history);
+    expect(sessionStore.getProfile()).toEqual({ nickname: "ひなた", avatar: "sun", age_group: "university" });
+    expect(sessionStore.getCheckin()).toEqual({ mood: 3, energy: 3 });
+    expect(sessionStore.getFlowState().hasMessages).toBe(true);
+  });
+
+  it("既存の sessionStorage にのみデータがある場合も読み取って localStorage に引き継ぐ", () => {
+    const legacyMessages = [{ role: "user" as const, content: "以前のタブの相談内容" }];
+    mockSessionStorage.setItem("hidamari.messages", JSON.stringify(legacyMessages));
+
+    expect(sessionStore.getMessages()).toEqual(legacyMessages);
+    expect(mockLocalStorage.getItem("hidamari.messages")).toBe(JSON.stringify(legacyMessages));
+  });
+
   it("要約共有記録で summaryShared が true になる", () => {
     sessionStore.setSummaryShared(true);
     expect(sessionStore.getFlowState().summaryShared).toBe(true);
@@ -94,6 +128,22 @@ describe("sessionStore", () => {
     sessionStore.addJoinedRoomId("room-1"); // 重複追加
     expect(sessionStore.getJoinedRoomIds()).toEqual(["room-1", "room-2"]);
     expect(sessionStore.getFlowState().joinedRoomIds).toEqual(["room-1", "room-2"]);
+  });
+
+  it("人間とのチャット中にタブを閉じても activeRoomId が保持され、joinedRoomIds にも登録される", () => {
+    expect(sessionStore.getActiveRoomId()).toBeNull();
+    sessionStore.setActiveRoomId("room-active-99");
+    expect(sessionStore.getActiveRoomId()).toBe("room-active-99");
+    expect(sessionStore.getJoinedRoomIds()).toContain("room-active-99");
+
+    // タブを閉じて再度ブラウザを開いた場合（sessionStorage クリア）でも localStorage から復元される
+    mockSessionStorage.clear();
+    expect(sessionStore.getActiveRoomId()).toBe("room-active-99");
+
+    // ルーム終了・退出時に null をセットするとクリアされる（joinedRoomIds には履歴として残る）
+    sessionStore.setActiveRoomId(null);
+    expect(sessionStore.getActiveRoomId()).toBeNull();
+    expect(sessionStore.getJoinedRoomIds()).toContain("room-active-99");
   });
 
   it("clearConsult で messages, flags, summaryShared がクリアされる", () => {
@@ -178,9 +228,11 @@ describe("sessionStore", () => {
     expect(sessionStore.getJoinedRoomIds()).toEqual([]);
   });
 
-  it("sessionStorage に不正な JSON が保存されていてもクラッシュせず fallback を返す", () => {
-    globalThis.sessionStorage.setItem("hidamari.profile", "INVALID_JSON{{");
-    globalThis.sessionStorage.setItem("hidamari.flags", "{corrupted");
+  it("ストレージに不正な JSON が保存されていてもクラッシュせず fallback を返す", () => {
+    mockLocalStorage.setItem("hidamari.profile", "INVALID_JSON{{");
+    mockLocalStorage.setItem("hidamari.flags", "{corrupted");
+    mockSessionStorage.setItem("hidamari.profile", "INVALID_JSON{{");
+    mockSessionStorage.setItem("hidamari.flags", "{corrupted");
 
     expect(sessionStore.getProfile()).toBeNull();
     expect(sessionStore.getFlags()).toEqual({ crisis: false, matchingBlocked: false });

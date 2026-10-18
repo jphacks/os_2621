@@ -196,6 +196,7 @@ export async function GET() {
         share_text: (r.from_summary ? textOf.get(r.from_summary) : undefined) ?? textByUserOf.get(r.from_user) ?? "",
         status: r.status,
         expires_at: r.expires_at,
+        room_id: r.room_id,
       }));
     const sent: SentRequestDto[] = list
       .filter((r) => r.from_user === userId)

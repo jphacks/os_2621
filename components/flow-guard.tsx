@@ -11,9 +11,12 @@ type ServerMeState = {
   summaryShared: boolean;
   summaryText: string | null;
   joinedRoomIds: string[];
+  activeRoomId?: string | null;
   isCrisis: boolean;
   isMatchingBlocked: boolean;
 };
+
+let hasCheckedAutoRoomThisTab = false;
 
 export function FlowGuard({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
@@ -24,6 +27,73 @@ export function FlowGuard({ children }: { children: React.ReactNode }) {
     let cancelled = false;
 
     async function checkAccess() {
+      // タブを閉じてブラウザを再度開いた際（初回マウント時）、人間との進行中チャット（activeRoomId）があれば自動でそのルーム画面を開く
+      if (!hasCheckedAutoRoomThisTab) {
+        hasCheckedAutoRoomThisTab = true;
+        const alreadyCheckedInTab = (() => {
+          try {
+            const v = window.sessionStorage?.getItem("hidamari.autoRoomChecked") === "1";
+            window.sessionStorage?.setItem("hidamari.autoRoomChecked", "1");
+            return v;
+          } catch {
+            return false;
+          }
+        })();
+
+        if (!alreadyCheckedInTab && !pathname.startsWith("/rooms/") && pathname !== "/crisis") {
+          const localFlags = sessionStore.getFlags();
+          const localActiveRoomId = sessionStore.getActiveRoomId();
+          if (localActiveRoomId && !localFlags.crisis && !localFlags.matchingBlocked) {
+            try {
+              window.sessionStorage?.setItem("hidamari.homeAutoRoomOpened", "1");
+            } catch {
+              // noop
+            }
+            setBlocked(true);
+            router.replace(`/rooms/${localActiveRoomId}`);
+            return;
+          }
+          // 相手がリクエストを承諾してルームが作られていた場合や、localStorage に activeRoomId が残っていなかった場合も /api/me から確認して自動で開く
+          try {
+            const res = await fetch("/api/me");
+            if (res.ok) {
+              const me = (await res.json()) as ServerMeState;
+              if (me.profile && !sessionStore.getProfile()) {
+                sessionStore.setProfile(me.profile);
+              }
+              if (me.checkin && !sessionStore.getCheckin()) {
+                sessionStore.setCheckin(me.checkin);
+              }
+              if (me.summaryShared) {
+                sessionStore.setSummaryShared(true);
+                if (!sessionStore.getFlowState().hasMessages && me.summaryText) {
+                  sessionStore.setMessages([{ role: "user", content: me.summaryText }]);
+                }
+              }
+              if (Array.isArray(me.joinedRoomIds)) {
+                me.joinedRoomIds.forEach((id) => sessionStore.addJoinedRoomId(id));
+              }
+              sessionStore.setActiveRoomId(me.activeRoomId ?? null);
+              if (me.isCrisis || me.isMatchingBlocked) {
+                sessionStore.setFlags({ crisis: me.isCrisis, matchingBlocked: me.isMatchingBlocked });
+              }
+              if (!cancelled && me.activeRoomId && !me.isCrisis && !me.isMatchingBlocked) {
+                try {
+                  window.sessionStorage?.setItem("hidamari.homeAutoRoomOpened", "1");
+                } catch {
+                  // noop
+                }
+                setBlocked(true);
+                router.replace(`/rooms/${me.activeRoomId}`);
+                return;
+              }
+            }
+          } catch {
+            // noop
+          }
+        }
+      }
+
       const state = sessionStore.getFlowState();
       const result = evaluateFlowAccess(pathname, state);
       if (result.allowed) {
@@ -39,7 +109,7 @@ export function FlowGuard({ children }: { children: React.ReactNode }) {
         return;
       }
 
-      // 別タブや再チェックイン等で sessionStorage が空でも、サーバー（DB）に有効なプロフィール・要約・参加ルームがあれば復元する
+      // 別タブや再チェックイン等で sessionStorage / localStorage が空でも、サーバー（DB）に有効なプロフィール・要約・参加ルームがあれば復元する
       setBlocked(true);
       try {
         const res = await fetch("/api/me");
@@ -59,6 +129,9 @@ export function FlowGuard({ children }: { children: React.ReactNode }) {
           }
           if (Array.isArray(me.joinedRoomIds)) {
             me.joinedRoomIds.forEach((id) => sessionStore.addJoinedRoomId(id));
+          }
+          if (me.activeRoomId !== undefined) {
+            sessionStore.setActiveRoomId(me.activeRoomId ?? null);
           }
           if (me.isCrisis || me.isMatchingBlocked) {
             sessionStore.setFlags({ crisis: me.isCrisis, matchingBlocked: me.isMatchingBlocked });

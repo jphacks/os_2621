@@ -20,8 +20,11 @@ export default function CheckinPage() {
     e.preventDefault();
     setBusy(true);
     sessionStore.setCheckin({ mood, energy });
-    // 新しい相談セッションの開始。前回の危機フラグなどは引き継がない
-    sessionStore.clearConsult();
+    // 前回のセッションが危機判定またはマッチング停止だった場合のみクリアし、通常の会話履歴は引き継げるようにする
+    const currentFlags = sessionStore.getFlags();
+    if (currentFlags.crisis || currentFlags.matchingBlocked) {
+      sessionStore.clearConsult();
+    }
     try {
       const res = await fetch("/api/checkin", {
         method: "POST",
